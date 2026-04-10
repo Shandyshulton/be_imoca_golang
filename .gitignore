@@ -1,0 +1,27 @@
+# Konfigurasi Privat (WAJIB)
+.env
+
+# Hasil Build / Binary Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+be_imoca_golang
+
+# Folder Dependency
+vendor/
+
+# Folder Upload Gambar (Agar repo tidak berat)
+# Kita hanya menyisakan foldernya saja, bukan isinya
+storage/uploads/news/*
+storage/uploads/partners/*
+storage/uploads/members/*
+
+# Kecualikan .gitkeep agar folder kosong tetap terdeteksi oleh Git
+!storage/uploads/news/.gitkeep
+!storage/uploads/partners/.gitkeep
+!storage/uploads/members/.gitkeep
+
+# File Log
+*.log
