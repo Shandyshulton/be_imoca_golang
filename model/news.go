@@ -10,7 +10,8 @@ type News struct {
 	ID          int       `json:"id"`
 	Title       string    `json:"title"`
 	Summary     string    `json:"summary"`
-	Source      string    `json:"source"` 
+	Source      string    `json:"source"`
+	Badge       string    `json:"badge"` 
 	URL         string    `json:"url"`
 	Image       string    `json:"image"`
 	PublishedAt time.Time `json:"published_at"`
@@ -21,7 +22,7 @@ func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 	var rows *sql.Rows
 	var err error
 
-	baseQuery := `SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), url, image, published_at FROM news`
+	baseQuery := `SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), COALESCE(badge, 'REGULASI'), url, image, published_at FROM news`
 
 	if keyword != "" {
 		query := baseQuery + " WHERE title LIKE ? OR summary LIKE ? ORDER BY published_at DESC"
@@ -40,7 +41,7 @@ func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 	newsList := []News{}
 	for rows.Next() {
 		var n News
-		err := rows.Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.URL, &n.Image, &n.PublishedAt)
+		err := rows.Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.Badge, &n.URL, &n.Image, &n.PublishedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -51,10 +52,14 @@ func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 
 // Create News
 func CreateNews(db *sql.DB, n *News) error {
+	if n.Badge == "" {
+		n.Badge = "REGULASI"
+	}
+	
 	now := time.Now()
-	query := "INSERT INTO news (title, summary, source, url, image, published_at) VALUES (?, ?, ?, ?, ?, ?)"
+	query := "INSERT INTO news (title, summary, source, badge, url, image, published_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
 
-	result, err := db.Exec(query, n.Title, n.Summary, n.Source, n.URL, n.Image, now)
+	result, err := db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, now)
 	if err != nil {
 		return err
 	}
@@ -79,8 +84,8 @@ func UpdateNews(db *sql.DB, n *News) error {
 		return errors.New("data berita tidak ditemukan di database")
 	}
 
-	query := `UPDATE news SET title = ?, summary = ?, source = ?, url = ?, image = ? WHERE id = ?`
-	_, err = db.Exec(query, n.Title, n.Summary, n.Source, n.URL, n.Image, n.ID)
+	query := `UPDATE news SET title = ?, summary = ?, source = ?, badge = ?, url = ?, image = ? WHERE id = ?`
+	_, err = db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, n.ID)
 	if err != nil {
 		return err
 	}
@@ -91,8 +96,8 @@ func UpdateNews(db *sql.DB, n *News) error {
 // GetNewsByID
 func GetNewsByID(db *sql.DB, id int) (News, error) {
 	var n News
-	query := "SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), url, image, published_at FROM news WHERE id = ?"
-	err := db.QueryRow(query, id).Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.URL, &n.Image, &n.PublishedAt)
+	query := "SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), COALESCE(badge, 'REGULASI'), url, image, published_at FROM news WHERE id = ?"
+	err := db.QueryRow(query, id).Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.Badge, &n.URL, &n.Image, &n.PublishedAt)
 	return n, err
 }
 
