@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	// LOAD ENV
+	// 1. LOAD ENV
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("Warning: file .env tidak ditemukan")
@@ -22,10 +22,11 @@ func main() {
 
 	util.InitLoggers()
 
+	// Pastikan folder storage/logs sudah ada
 	f, _ := os.OpenFile("storage/logs/info.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
+	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 
-	// KONEKSI DB
+	// 2. KONEKSI DB
 	db := config.ConnectDB()
 	defer db.Close()
 
@@ -33,32 +34,37 @@ func main() {
 		log.Fatal("Database tidak merespon: ", err)
 	}
 
-	// SETUP GIN
+	// 3. SETUP GIN
 	r := gin.Default()
 
-	// CORS
+	// 4. CORS - Mengizinkan React mengakses API
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: 	  []string{"*"},
+		AllowOrigins:     []string{"*"}, 
 		AllowMethods:     []string{"GET", "POST", "DELETE", "PUT", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
+		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
 
+	// 5. STATIC FILES
 	r.Static("/uploads", "./storage/uploads")
 
 	r.MaxMultipartMemory = 12 << 20
 
-	// ROUTES
-	route.InitRoutes(r, db)
+	// 6. ROUTES - Dibungkus dengan grup /api
+	api := r.Group("/api")
+	{
+		route.InitRoutes(api, db) // Melemparkan grup /api ke InitRoutes
+	}
 
-	// RUN
+	// 7. RUN
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	log.Printf("IMOCA Backend berjalan di http://localhost:%s\n", port)
-	if err := r.Run("0.0.0.0:" + port); err != nil {
+	log.Printf("IMOCA Backend berjalan di http://localhost:%s/api\n", port)
+	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Gagal menjalankan server: ", err)
 	}
 }

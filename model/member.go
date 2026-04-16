@@ -2,93 +2,113 @@ package model
 
 import (
 	"database/sql"
-	"errors" 
+	"errors"
 )
 
 type Member struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Position string `json:"position"`
+	ID          int    `json:"id" form:"id"`
+	Name        string `json:"name" form:"name"`
+	Email       string `json:"email" form:"email"`
+	Phone       string `json:"phone" form:"phone"`
+	Description string `json:"description" form:"description"`
+	Link        string `json:"link" form:"link"`
+	Image       string `json:"image" form:"image"`
 }
 
+// GetAllMembers mengambil semua data anggota tim
 func GetAllMembers(db *sql.DB, keyword string) ([]Member, error) {
-    var rows *sql.Rows
-    var err error
+	var rows *sql.Rows
+	var err error
 
-    if keyword != "" {
-        query := "SELECT id, name, position FROM members WHERE name LIKE ?"
-        rows, err = db.Query(query, "%"+keyword+"%")
-    } else {
-        query := "SELECT id, name, position FROM members"
-        rows, err = db.Query(query)
-    }
+	baseQuery := `SELECT id, name, email, 
+                  COALESCE(phone, ''), 
+                  COALESCE(description, ''), 
+                  COALESCE(link, ''), 
+                  COALESCE(image, '') 
+                  FROM members`
 
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
+	if keyword != "" {
+		query := baseQuery + " WHERE name LIKE ? OR description LIKE ?"
+		searchPattern := "%" + keyword + "%"
+		rows, err = db.Query(query, searchPattern, searchPattern)
+	} else {
+		rows, err = db.Query(baseQuery)
+	}
 
-    members := []Member{} 
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    for rows.Next() {
-        var m Member
-        if err := rows.Scan(&m.ID, &m.Name, &m.Position); err != nil {
-            return nil, err
-        }
-        members = append(members, m)
-    }
+	members := []Member{}
+	for rows.Next() {
+		var m Member
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Phone, &m.Description, &m.Link, &m.Image); err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
 
-    if err := rows.Err(); err != nil {
-        return nil, err
-    }
-    return members, nil
+	return members, nil
 }
 
-// Create Member
-func CreateMember(db *sql.DB, m *Member) error { 
-    query := "INSERT INTO members (name, position) VALUES (?, ?)"
-    result, err := db.Exec(query, m.Name, m.Position)
-    if err != nil {
-        return err
-    }
+// GetMemberByID mengambil satu data anggota berdasarkan ID
+func GetMemberByID(db *sql.DB, id int) (Member, error) {
+	var m Member
+	query := `SELECT id, name, email, 
+              COALESCE(phone, ''), 
+              COALESCE(description, ''), 
+              COALESCE(link, ''), 
+              COALESCE(image, '') 
+              FROM members WHERE id = ?`
 
-    lastID, err := result.LastInsertId()
-    if err != nil {
-        return err
-    }
-
-    m.ID = int(lastID)
-
-    return nil
+	err := db.QueryRow(query, id).Scan(&m.ID, &m.Name, &m.Email, &m.Phone, &m.Description, &m.Link, &m.Image)
+	return m, err
 }
 
-// UpdateMember - Hapus parameter string id
+// CreateMember menambahkan anggota baru
+func CreateMember(db *sql.DB, m *Member) error {
+	query := "INSERT INTO members (name, email, phone, description, link, image) VALUES (?, ?, ?, ?, ?, ?)"
+
+	result, err := db.Exec(query, m.Name, m.Email, m.Phone, m.Description, m.Link, m.Image)
+	if err != nil {
+		return err
+	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	m.ID = int(lastID)
+	return nil
+}
+
+// UpdateMember memperbarui data anggota
 func UpdateMember(db *sql.DB, m *Member) error {
-    query := `UPDATE members SET name = ?, position = ? WHERE id = ?`
-    
-    // Langsung ambil m.ID dari struct
-    result, err := db.Exec(query, m.Name, m.Position, m.ID)
-    if err != nil {
-        return err
-    }
+	var exists int
+	err := db.QueryRow("SELECT COUNT(*) FROM members WHERE id = ?", m.ID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if exists == 0 {
+		return errors.New("member tidak ditemukan")
+	}
 
-    rowsAffected, _ := result.RowsAffected()
-    if rowsAffected == 0 {
-        return errors.New("tidak ada data yang diubah atau ID tidak ditemukan")
-    }
+	query := `UPDATE members SET name = ?, email = ?, phone = ?, description = ?, link = ?, image = ? WHERE id = ?`
+	_, err = db.Exec(query, m.Name, m.Email, m.Phone, m.Description, m.Link, m.Image, m.ID)
 
-    return nil
+	return err
 }
 
-// Delete Member
-func DeleteMember(db *sql.DB, id string) error {
+// DeleteMember menghapus data anggota
+func DeleteMember(db *sql.DB, id int) error {
 	query := "DELETE FROM members WHERE id = ?"
 	result, err := db.Exec(query, id)
 	if err != nil {
 		return err
 	}
 
-	// Cek apakah ada baris yang benar-benar terhapus
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return errors.New("data member tidak ditemukan")

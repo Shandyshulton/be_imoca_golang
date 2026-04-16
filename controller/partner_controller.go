@@ -3,6 +3,7 @@ package controller
 import (
 	"be_imoca_golang/model"
 	"database/sql"
+	"strconv"
 	"fmt"
 	"log"
 	"net/http"
@@ -61,70 +62,72 @@ func CreatePartnerHandler(db *sql.DB) gin.HandlerFunc {
 		description := c.PostForm("description")
 		link := c.PostForm("link")
 
-		if strings.TrimSpace(name) == "" || strings.TrimSpace(email) == "" {
+		// Empty Validation
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(email) == "" || 
+		   strings.TrimSpace(phone) == "" || strings.TrimSpace(description) == "" {
+			log.Println("[WARN] Pendaftaran mitra ditolak: Data tidak lengkap")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "400",
-				"message": "Nama dan Email wajib diisi!",
+				"message": "Nama, Email, Telepon, dan Deskripsi wajib diisi!",
 			})
 			return
 		}
 
 		file, err := c.FormFile("image")
-		var fileName string
-		if err == nil {
-			// Validation Format File
-			if !isAllowedExtension(file.Filename) {
-				log.Printf("[REJECTED] Format file tidak diizinkan: %s", file.Filename)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": "Format file tidak didukung! Hanya diperbolehkan: .jpg, .jpeg, dan .png",
-				})
-				return
-			}
-
-			// Validation Size File (Max 10MB)
-			maxMB := 10
-			var maxFileSize int64 = int64(maxMB) * 1024 * 1024
-			if file.Size > maxFileSize {
-				log.Printf("[REJECTED] File terlalu besar: %s (%d bytes)", file.Filename, file.Size)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": fmt.Sprintf("Ukuran file terlalu besar! Maksimal diperbolehkan adalah %dMB", maxMB),
-				})
-				return
-			}
-
-			// Save File
-			extension := filepath.Ext(file.Filename)
-			fileName = fmt.Sprintf("partner-%d%s", time.Now().UnixNano(), extension)
-			targetPath := filepath.Join("storage", "uploads", "partners", fileName)
-
-			if err := c.SaveUploadedFile(file, targetPath); err != nil {
-				log.Printf("[ERROR] Gagal simpan gambar mitra: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"code":    "500",
-					"message": "Gagal menyimpan gambar di server",
-				})
-				return
-			}
+		if err != nil {
+			log.Println("[WARN] Pendaftaran mitra ditolak: Gambar tidak ditemukan")
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": "Logo atau Gambar mitra wajib diunggah!",
+			})
+			return
 		}
 
-		// Save DB
+		// Validation Format File
+		if !isAllowedExtension(file.Filename) {
+			log.Printf("[REJECTED] Format file tidak diizinkan: %s", file.Filename)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": "Format file tidak didukung! Gunakan .jpg, .jpeg, atau .png",
+			})
+			return
+		}
+
+		// Validation Size File (Maks 10MB)
+		maxMB := 10
+		var maxFileSize int64 = int64(maxMB) * 1024 * 1024
+		if file.Size > maxFileSize {
+			log.Printf("[REJECTED] File terlalu besar: %d bytes", file.Size)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": fmt.Sprintf("Ukuran file terlalu besar! Maksimal adalah %dMB", maxMB),
+			})
+			return
+		}
+
+		// Save File to Storage
+		extension := filepath.Ext(file.Filename)
+		newFileName := fmt.Sprintf("partner-%d%s", time.Now().UnixNano(), extension)
+		targetPath := filepath.Join("storage", "uploads", "partners", newFileName)
+
+		if err := c.SaveUploadedFile(file, targetPath); err != nil {
+			log.Printf("[ERROR] Gagal simpan gambar mitra: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menyimpan gambar di server"})
+			return
+		}
+
 		p := model.Partner{
 			Name:        name,
 			Email:       email,
 			Phone:       phone,
 			Description: description,
 			Link:        link,
-			Image:       fileName,
+			Image:       newFileName,
 		}
 
 		if err := model.CreatePartner(db, &p); err != nil {
 			log.Printf("[DATABASE ERROR] Gagal create partner: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal simpan ke database: " + err.Error(),
-			})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan ke database"})
 			return
 		}
 
@@ -139,124 +142,119 @@ func CreatePartnerHandler(db *sql.DB) gin.HandlerFunc {
 
 // UpdatePartnerHandler 
 func UpdatePartnerHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		log.Println("[INFO] Memproses update data mitra...")
+    return func(c *gin.Context) {
+        var uri PartnerUri
+        if err := c.ShouldBindUri(&uri); err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID mitra tidak valid"})
+            return
+        }
 
-		var uri PartnerUri
-		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": "ID mitra tidak valid",
-			})
-			return
-		}
+        log.Printf("[INFO] Memproses update data mitra ID: %d", uri.ID)
 
-		oldPartner, err := model.GetPartnerByID(db, uri.ID)
-		if err != nil {
-			log.Printf("[WARN] Update gagal, mitra ID %d tidak ditemukan", uri.ID)
-			c.JSON(http.StatusNotFound, gin.H{
-				"code":    "404",
-				"message": "Mitra tidak ditemukan",
-			})
-			return
-		}
+        oldPartner, err := model.GetPartnerByID(db, uri.ID)
+        if err != nil {
+            log.Printf("[WARN] Update gagal, mitra ID %d tidak ditemukan", uri.ID)
+            c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Mitra tidak ditemukan"})
+            return
+        }
 
-		name := c.PostForm("name")
-		email := c.PostForm("email")
-		phone := c.PostForm("phone")
-		description := c.PostForm("description")
-		link := c.PostForm("link")
+        name := c.PostForm("name")
+        email := c.PostForm("email")
+        phone := c.PostForm("phone")
+        description := c.PostForm("description")
+        link := c.PostForm("link")
 
-		p := model.Partner{
-			ID:          uri.ID,
-			Name:        name,
-			Email:       email,
-			Phone:       phone,
-			Description: description,
-			Link:        link,
-			Image:       oldPartner.Image, 
-		}
+        // Empty Validation
+        if strings.TrimSpace(name) == "" || strings.TrimSpace(email) == "" || strings.TrimSpace(phone) == "" || strings.TrimSpace(description) == "" {
+            log.Printf("[WARN] Update ID %d ditolak: Data tidak lengkap", uri.ID)
+            c.JSON(http.StatusBadRequest, gin.H{
+                "code":    "400",
+                "message": "Nama, Email, Telepon, dan Deskripsi wajib diisi!",
+            })
+            return
+        }
 
-		file, err := c.FormFile("image")
-		if err == nil {
-			// Validation Format File
-			if !isAllowedExtension(file.Filename) {
-				log.Printf("[REJECTED] Update gambar ditolak, format salah: %s", file.Filename)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": "Format file tidak didukung! Hanya diperbolehkan: .jpg, .jpeg, dan .png",
-				})
-				return
-			}
+        p := model.Partner{
+            ID:          uri.ID,
+            Name:        name,
+            Email:       email,
+            Phone:       phone,
+            Description: description,
+            Link:        link,
+            Image:       oldPartner.Image, 
+        }
 
-			// Validation Size File (Max 10MB)
-			maxMB := 10
-			var maxFileSize int64 = int64(maxMB) * 1024 * 1024
-			if file.Size > maxFileSize {
-				log.Printf("[REJECTED] Update gagal, file %s terlalu besar (%d bytes)", file.Filename, file.Size)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": fmt.Sprintf("Ukuran file terlalu besar! Maksimal diperbolehkan adalah %dMB", maxMB),
-				})
-				return
-			}
+        file, err := c.FormFile("image")
+        if err == nil {
+            if !isAllowedExtension(file.Filename) {
+                c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Format gambar tidak didukung!"})
+                return
+            }
 
-			// Save New File
-			extension := filepath.Ext(file.Filename)
-			newFileName := fmt.Sprintf("partner-%d%s", time.Now().UnixNano(), extension)
-			targetPath := filepath.Join("storage", "uploads", "partners", newFileName)
+            extension := filepath.Ext(file.Filename)
+            newFileName := fmt.Sprintf("partner-%d%s", time.Now().UnixNano(), extension)
+            targetPath := filepath.Join("storage", "uploads", "partners", newFileName)
 
-			if err := c.SaveUploadedFile(file, targetPath); err != nil {
-				log.Printf("[ERROR] Gagal simpan gambar baru: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"code":    "500",
-					"message": "Gagal menyimpan gambar baru di server",
-				})
-				return
-			}
+            if err := c.SaveUploadedFile(file, targetPath); err == nil {
+                if oldPartner.Image != "" {
+                    oldFilePath := filepath.Join("storage", "uploads", "partners", oldPartner.Image)
+                    os.Remove(oldFilePath)
+                }
+                p.Image = newFileName
+            }
+        }
 
-			// Remove File If Successfully Uploaded
-			if oldPartner.Image != "" {
-				oldFilePath := filepath.Join("storage", "uploads", "partners", oldPartner.Image)
-				os.Remove(oldFilePath)
-				log.Printf("[INFO] File lama dihapus: %s", oldPartner.Image)
-			}
-			p.Image = newFileName
-		}
+        // Update Database
+        if err := model.UpdatePartner(db, &p); err != nil {
+            log.Printf("[DATABASE ERROR] Gagal update partner ID %d: %v", p.ID, err)
+            c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal memperbarui database"})
+            return
+        }
 
-		if err := model.UpdatePartner(db, &p); err != nil {
-			log.Printf("[DATABASE ERROR] Gagal update partner ID %d: %v", p.ID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal memperbarui data: " + err.Error(),
-			})
-			return
-		}
-
-		log.Printf("[SUCCESS] Data mitra ID %d (%s) berhasil diperbarui", p.ID, p.Name)
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Data mitra berhasil diperbarui!",
-			"data":    p,
-		})
-	}
+        log.Printf("[SUCCESS] Data mitra ID %d (%s) berhasil diperbarui", p.ID, p.Name)
+        c.JSON(http.StatusOK, gin.H{
+            "code":    "200",
+            "message": "Data mitra berhasil diperbarui!",
+            "data":    p,
+        })
+    }
 }
 
 // DeletePartnerHandler 
 func DeletePartnerHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
+		log.Printf("[INFO] Menerima request hapus mitra ID: %s", idStr)
 
-		if err := model.DeletePartner(db, idStr); err != nil {
-			log.Printf("[ERROR] Gagal hapus mitra ID %s: %v", idStr, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal menghapus mitra: " + err.Error(),
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			log.Printf("[ERROR] ID tidak valid: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": "ID mitra harus berupa angka!",
 			})
 			return
 		}
 
-		log.Printf("[SUCCESS] Mitra ID %s berhasil dihapus", idStr)
+		if err := model.DeletePartner(db, id); err != nil {
+			log.Printf("[ERROR] Gagal hapus mitra ID %d: %v", id, err)
+			
+			if err.Error() == "data partner tidak ditemukan" {
+				c.JSON(http.StatusNotFound, gin.H{
+					"code":    "404",
+					"message": "Mitra tidak ditemukan",
+				})
+				return
+			}
+
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    "500",
+				"message": "Gagal menghapus mitra",
+			})
+			return
+		}
+
+		log.Printf("[SUCCESS] Mitra ID %d berhasil dihapus dari sistem", id)
 		c.JSON(http.StatusOK, gin.H{
 			"code":    "200",
 			"message": "Mitra berhasil dihapus",

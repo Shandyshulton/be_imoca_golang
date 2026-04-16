@@ -86,23 +86,23 @@ func CreatePartner(db *sql.DB, p *Partner) error {
 
 // UpdatePartner 
 func UpdatePartner(db *sql.DB, p *Partner) error {
-	query := `UPDATE partners SET name = ?, email = ?, phone = ?, description = ?, link = ?, image = ? WHERE id = ?`
-	
-	result, err := db.Exec(query, p.Name, p.Email, p.Phone, p.Description, p.Link, p.Image, p.ID)
+	var exists int
+	err := db.QueryRow("SELECT COUNT(*) FROM partners WHERE id = ?", p.ID).Scan(&exists)
 	if err != nil {
 		return err
 	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return errors.New("tidak ada data yang berubah atau ID tidak ditemukan")
+	if exists == 0 {
+		return errors.New("partner tidak ditemukan")
 	}
 
-	return nil
+	query := `UPDATE partners SET name = ?, email = ?, phone = ?, description = ?, link = ?, image = ? WHERE id = ?`
+	_, err = db.Exec(query, p.Name, p.Email, p.Phone, p.Description, p.Link, p.Image, p.ID)
+	
+	return err
 }
 
-// DeletePartner
-func DeletePartner(db *sql.DB, id string) error {
+// DeletePartner 
+func DeletePartner(db *sql.DB, id int) error {
 	query := "DELETE FROM partners WHERE id = ?"
 	result, err := db.Exec(query, id)
 	if err != nil {

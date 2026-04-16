@@ -2,14 +2,16 @@ package model
 
 import (
 	"database/sql"
-	"errors" 
+	"errors"
 	"time"
 )
 
 type News struct {
 	ID          int       `json:"id"`
 	Title       string    `json:"title"`
-	Content     string    `json:"content"`
+	Summary     string    `json:"summary"`
+	Source      string    `json:"source"` 
+	URL         string    `json:"url"`
 	Image       string    `json:"image"`
 	PublishedAt time.Time `json:"published_at"`
 }
@@ -19,12 +21,14 @@ func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 	var rows *sql.Rows
 	var err error
 
+	baseQuery := `SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), url, image, published_at FROM news`
+
 	if keyword != "" {
-		query := "SELECT id, title, content, image, published_at FROM news WHERE title LIKE ? OR content LIKE ? ORDER BY published_at DESC"
+		query := baseQuery + " WHERE title LIKE ? OR summary LIKE ? ORDER BY published_at DESC"
 		searchPattern := "%" + keyword + "%"
 		rows, err = db.Query(query, searchPattern, searchPattern)
 	} else {
-		query := "SELECT id, title, content, image, published_at FROM news ORDER BY published_at DESC"
+		query := baseQuery + " ORDER BY published_at DESC"
 		rows, err = db.Query(query)
 	}
 
@@ -33,77 +37,73 @@ func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 	}
 	defer rows.Close()
 
-	newsList := []News{} 
+	newsList := []News{}
 	for rows.Next() {
 		var n News
-		err := rows.Scan(&n.ID, &n.Title, &n.Content, &n.Image, &n.PublishedAt)
+		err := rows.Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.URL, &n.Image, &n.PublishedAt)
 		if err != nil {
 			return nil, err
 		}
 		newsList = append(newsList, n)
 	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
 	return newsList, nil
 }
 
 // Create News
 func CreateNews(db *sql.DB, n *News) error {
-    now := time.Now() 
-    query := "INSERT INTO news (title, content, image, published_at) VALUES (?, ?, ?, ?)"
-    
-    result, err := db.Exec(query, n.Title, n.Content, n.Image, now)
-    if err != nil {
-        return err
-    }
+	now := time.Now()
+	query := "INSERT INTO news (title, summary, source, url, image, published_at) VALUES (?, ?, ?, ?, ?, ?)"
 
-    lastID, err := result.LastInsertId()
-    if err != nil {
-        return err
-    }
-
-    n.ID = int(lastID)
-    n.PublishedAt = now 
-
-    return nil
-}
-
-// Update News
-func UpdateNews(db *sql.DB, n *News) error {
-	query := `UPDATE news SET title = ?, content = ?, image = ? WHERE id = ?`
-	
-	result, err := db.Exec(query, n.Title, n.Content, n.Image, n.ID)
+	result, err := db.Exec(query, n.Title, n.Summary, n.Source, n.URL, n.Image, now)
 	if err != nil {
 		return err
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return errors.New("berita tidak ditemukan atau tidak ada perubahan data")
+	lastID, _ := result.LastInsertId()
+	n.ID = int(lastID)
+	n.PublishedAt = now
+
+	return nil
+}
+
+// Update News
+func UpdateNews(db *sql.DB, n *News) error {
+	var exists int
+	checkQuery := "SELECT COUNT(*) FROM news WHERE id = ?"
+	err := db.QueryRow(checkQuery, n.ID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists == 0 {
+		return errors.New("data berita tidak ditemukan di database")
+	}
+
+	query := `UPDATE news SET title = ?, summary = ?, source = ?, url = ?, image = ? WHERE id = ?`
+	_, err = db.Exec(query, n.Title, n.Summary, n.Source, n.URL, n.Image, n.ID)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
+// GetNewsByID
 func GetNewsByID(db *sql.DB, id int) (News, error) {
 	var n News
-	query := "SELECT id, title, content, image FROM news WHERE id = ?"
-	err := db.QueryRow(query, id).Scan(&n.ID, &n.Title, &n.Content, &n.Image)
+	query := "SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), url, image, published_at FROM news WHERE id = ?"
+	err := db.QueryRow(query, id).Scan(&n.ID, &n.Title, &n.Summary, &n.Source, &n.URL, &n.Image, &n.PublishedAt)
 	return n, err
 }
 
-// Delete News
-func DeleteNews(db *sql.DB, id string) error {
+// Delete News 
+func DeleteNews(db *sql.DB, id int) error {
 	query := "DELETE FROM news WHERE id = ?"
 	result, err := db.Exec(query, id)
 	if err != nil {
 		return err
 	}
 
-	// Cek apakah ada baris yang benar-benar terhapus
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		return errors.New("data berita tidak ditemukan")

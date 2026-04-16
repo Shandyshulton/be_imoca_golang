@@ -3,6 +3,7 @@ package controller
 import (
 	"be_imoca_golang/model"
 	"database/sql"
+	"strconv"
 	"fmt"
 	"log"
 	"os"
@@ -22,14 +23,19 @@ type NewsUri struct {
 func GetNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyword := c.Query("title")
+		log.Printf("[INFO] Memproses pengambilan data berita. Keyword pencarian: '%s'", keyword)
+
 		news, err := model.GetAllNews(db, keyword)
 		if err != nil {
+			log.Printf("[ERROR] Gagal mengambil data berita dari database: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    "500",
-				"message": "Gagal memuat daftar berita: " + err.Error(),
+				"message": "Gagal memuat daftar berita",
 			})
 			return
 		}
+		
+		log.Printf("[SUCCESS] Berhasil mengambil %d data berita", len(news))
 		c.JSON(http.StatusOK, gin.H{
 			"code":    "200",
 			"message": "Data berita berhasil diambil",
@@ -41,19 +47,27 @@ func GetNewsHandler(db *sql.DB) gin.HandlerFunc {
 // CreateNewsHandler 
 func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		title := c.PostForm("title")
-		content := c.PostForm("content")
+		log.Println("[INFO] Mencoba menambahkan berita baru...")
 
-		if strings.TrimSpace(title) == "" || strings.TrimSpace(content) == "" {
+		title := c.PostForm("title")
+		summary := c.PostForm("summary")
+		source := c.PostForm("source") 
+		url := c.PostForm("url")
+
+		// Empty Validation
+		if strings.TrimSpace(title) == "" || strings.TrimSpace(summary) == "" || 
+		   strings.TrimSpace(source) == "" || strings.TrimSpace(url) == "" {
+			log.Println("[WARN] Penambahan berita ditolak: Data tidak lengkap")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "400",
-				"message": "Judul dan Konten wajib diisi!",
+				"message": "Semua field (Judul, Ringkasan, Sumber, URL) wajib diisi!",
 			})
 			return
 		}
 
 		file, err := c.FormFile("image")
 		if err != nil {
+			log.Println("[WARN] Penambahan berita ditolak: Gambar tidak ditemukan")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "400",
 				"message": "Gambar berita wajib diunggah!",
@@ -61,59 +75,40 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Validation Format File
 		if !isAllowedExtension(file.Filename) {
-			log.Printf("[REJECTED] Format file berita ditolak: %s", file.Filename)
+			log.Printf("[REJECTED] Format file tidak didukung: %s", file.Filename)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "400",
-				"message": "Format file tidak didukung! Hanya diperbolehkan: .jpg, .jpeg, dan .png",
+				"message": "Format file tidak didukung! Gunakan .jpg, .jpeg, atau .png",
 			})
 			return
 		}
 
-		// Validation Size File (Max 10MB)
-		maxMB := 10
-		var maxFileSize int64 = int64(maxMB) * 1024 * 1024
-		if file.Size > maxFileSize {
-			log.Printf("[REJECTED] File berita terlalu besar: %s (%d bytes)", file.Filename, file.Size)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": fmt.Sprintf("Ukuran gambar berita terlalu besar! Maksimal adalah %dMB", maxMB),
-			})
-			return
-		}
-
-		// Save File and Path
 		extension := filepath.Ext(file.Filename)
 		newFileName := fmt.Sprintf("news-%d%s", time.Now().UnixNano(), extension)
 		targetPath := filepath.Join("storage", "uploads", "news", newFileName)
 
 		if err := c.SaveUploadedFile(file, targetPath); err != nil {
-			log.Printf("[ERROR] Gagal simpan file berita: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal menyimpan gambar di server",
-			})
+			log.Printf("[ERROR] Gagal menyimpan file di server: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menyimpan gambar"})
 			return
 		}
 
-		// Save DB
 		n := model.News{
 			Title:   title,
-			Content: content,
+			Summary: summary,
+			Source:  source, 
+			URL:     url,
 			Image:   newFileName, 
 		}
 
 		if err := model.CreateNews(db, &n); err != nil {
-			log.Printf("[DATABASE ERROR] %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal simpan ke database: " + err.Error(),
-			})
+			log.Printf("[DATABASE ERROR] Gagal simpan news: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan ke database"})
 			return
 		}
 
-		log.Printf("[SUCCESS] Berita '%s' berhasil diterbitkan", n.Title)
+		log.Printf("[SUCCESS] Berita '%s' (ID: %d) berhasil diterbitkan", n.Title, n.ID)
 		c.JSON(http.StatusCreated, gin.H{
 			"code":    "201",
 			"message": "Berita berhasil diterbitkan!",
@@ -124,83 +119,67 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 
 func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		log.Println("[INFO] Memproses update data berita...")
-
 		var uri NewsUri
 		if err := c.ShouldBindUri(&uri); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
 			return
 		}
 
+		log.Printf("[INFO] Memproses pembaruan berita ID: %d", uri.ID)
+
 		oldNews, err := model.GetNewsByID(db, uri.ID)
 		if err != nil {
-			log.Printf("[WARN] Update gagal, berita ID %d tidak ditemukan", uri.ID)
+			log.Printf("[WARN] Update gagal: Berita ID %d tidak ditemukan", uri.ID)
 			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Berita tidak ditemukan"})
 			return
 		}
 
 		title := c.PostForm("title")
-		content := c.PostForm("content")
-		
+		summary := c.PostForm("summary")
+		source := c.PostForm("source") 
+		url := c.PostForm("url")
+
+		// Empty Validation 
+		if strings.TrimSpace(title) == "" || strings.TrimSpace(summary) == "" || 
+		   strings.TrimSpace(source) == "" || strings.TrimSpace(url) == "" {
+			log.Printf("[WARN] Update ID %d ditolak: Data tidak lengkap", uri.ID)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": "Semua field wajib diisi!",
+			})
+			return
+		}
+
 		updatedNews := model.News{
 			ID:      uri.ID,
 			Title:   title,
-			Content: content,
+			Summary: summary,
+			Source:  source,
+			URL:     url,
 			Image:   oldNews.Image, 
 		}
 
 		file, err := c.FormFile("image")
-		if err == nil { 
-			// A. VALIDASI FORMAT FILE
+		if err == nil {
 			if !isAllowedExtension(file.Filename) {
-				log.Printf("[REJECTED] Update berita ditolak, format salah: %s", file.Filename)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": "Format file tidak didukung! Hanya diperbolehkan: .jpg, .jpeg, dan .png",
-				})
+				c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Format gambar tidak didukung!"})
 				return
 			}
 
-			// Validation Size File (Max 10MB)
-			maxMB := 10
-			var maxFileSize int64 = int64(maxMB) * 1024 * 1024
-			if file.Size > maxFileSize {
-				log.Printf("[REJECTED] Update berita gagal, file terlalu besar: %d bytes", file.Size)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": fmt.Sprintf("Ukuran gambar berita terlalu besar! Maksimal adalah %dMB", maxMB),
-				})
-				return
-			}
-
-			// Save New File
 			extension := filepath.Ext(file.Filename)
 			newFileName := fmt.Sprintf("news-%d%s", time.Now().UnixNano(), extension)
 			targetPath := filepath.Join("storage", "uploads", "news", newFileName)
 
-			if err := c.SaveUploadedFile(file, targetPath); err != nil {
-				log.Printf("[ERROR] Gagal simpan gambar berita baru: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan gambar baru"})
-				return
-			}
-
-			// Remove File If Successfully Uploaded
-			if oldNews.Image != "" {
+			if err := c.SaveUploadedFile(file, targetPath); err == nil {
 				oldFilePath := filepath.Join("storage", "uploads", "news", oldNews.Image)
-				if err := os.Remove(oldFilePath); err != nil {
-					log.Printf("[WARN] Gagal menghapus file lama: %v", err)
-				} else {
-					log.Printf("[INFO] File lama berhasil dihapus: %s", oldNews.Image)
-				}
+				os.Remove(oldFilePath) 
+				updatedNews.Image = newFileName
 			}
-
-			updatedNews.Image = newFileName
 		}
 
-		// Save DB
 		if err := model.UpdateNews(db, &updatedNews); err != nil {
-			log.Printf("[DATABASE ERROR] %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal update database: " + err.Error()})
+			log.Printf("[DATABASE ERROR] Gagal update news ID %d: %v", uri.ID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal update database"})
 			return
 		}
 
@@ -213,35 +192,46 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// DeleteNewsHandler 
 func DeleteNewsHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		id := c.Param("id")
-		if err := model.DeleteNews(db, id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal menghapus berita: " + err.Error(),
-			})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Berita berhasil dihapus",
-		})
-	}
+    return func(c *gin.Context) {
+        idStr := c.Param("id")
+        log.Printf("[INFO] Menerima request hapus berita ID: %s", idStr)
+
+        // Konversi string ke int
+        id, err := strconv.Atoi(idStr)
+        if err != nil {
+            log.Printf("[ERROR] ID tidak valid: %v", err)
+            c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID berita harus angka"})
+            return
+        }
+
+        if err := model.DeleteNews(db, id); err != nil {
+            log.Printf("[ERROR] Gagal menghapus berita ID %d: %v", id, err)
+            c.JSON(http.StatusInternalServerError, gin.H{
+                "code":    "500",
+                "message": "Gagal menghapus berita",
+            })
+            return
+        }
+
+        log.Printf("[SUCCESS] Berita ID %d berhasil dihapus", id)
+        c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Berita berhasil dihapus"})
+    }
 }
 
-// GetNewsByIDHandler untuk melihat detail satu berita
 func GetNewsByIDHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var uri NewsUri
 		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID berita tidak valid"})
+			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
 			return
 		}
 
+		log.Printf("[INFO] Mengambil detail berita ID: %d", uri.ID)
+
 		news, err := model.GetNewsByID(db, uri.ID)
 		if err != nil {
+			log.Printf("[WARN] Berita ID %d tidak ditemukan", uri.ID)
 			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Berita tidak ditemukan"})
 			return
 		}
@@ -253,3 +243,4 @@ func GetNewsByIDHandler(db *sql.DB) gin.HandlerFunc {
 		})
 	}
 }
+
