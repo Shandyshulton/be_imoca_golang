@@ -6,12 +6,12 @@ import (
 )
 
 type Hero struct {
-	ID             int    `json:"id"`
-	BadgeText      string `json:"badge_text"`
-	Title          string `json:"title"`
-	TitleHighlight string `json:"title_highlight"`
-	Description    string `json:"description"`
-	Image          string `json:"image"`
+    ID             int    `json:"id" form:"id"`
+    BadgeText      string `json:"badge_text" form:"badge_text"`
+    Title          string `json:"title" form:"title"`
+    TitleHighlight string `json:"title_highlight" form:"title_highlight"`
+    Description    string `json:"description" form:"description"`
+    Image          string `json:"image"`
 }
 
 // Get Hero

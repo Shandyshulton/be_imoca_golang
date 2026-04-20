@@ -60,7 +60,7 @@ func InitRoutes(r *gin.RouterGroup, db *sql.DB) {
 		admin.DELETE("/news/:id", controller.DeleteNewsHandler(db))
 
 		// EDITABLE CONTENT
-		admin.PUT("/hero", controller.UpdateHeroHandler(db))
+		admin.POST("/hero", controller.UpdateHeroHandler(db))
 		admin.PUT("/services", controller.UpdateServicesHandler(db))
 		admin.PUT("/vision", controller.UpdateVisionHandler(db))
 		admin.PUT("/mission", controller.UpdateMissionHandler(db))

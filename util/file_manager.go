@@ -21,6 +21,8 @@ func HandleFileUpload(c *gin.Context, fieldName string, category string, oldFile
 	// Validasi Ekstensi
 	extensions := []string{".jpg", ".jpeg", ".png"}
 	ext := strings.ToLower(filepath.Ext(file.Filename))
+	// TAMBAHKAN LOG INI:
+    log.Printf("[DEBUG] File received: %s | Ext: %s", file.Filename, ext)
 	isAllowed := false
 	for _, e := range extensions {
 		if e == ext {
