@@ -47,7 +47,7 @@ func main() {
 	}))
 
 	// 5. STATIC FILES
-	r.Static("/uploads", "./storage/uploads")
+	r.Static("/storage", "storage")
 
 	r.MaxMultipartMemory = 12 << 20
 
