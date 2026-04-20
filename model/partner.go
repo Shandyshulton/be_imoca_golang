@@ -52,7 +52,7 @@ func GetAllPartners(db *sql.DB, keyword string) ([]Partner, error) {
 	return partners, nil
 }
 
-// GetPartnerByID 
+// Get Partner ID 
 func GetPartnerByID(db *sql.DB, id int) (Partner, error) {
 	var p Partner
 	query := `SELECT id, name, email, 
@@ -84,7 +84,7 @@ func CreatePartner(db *sql.DB, p *Partner) error {
 	return nil
 }
 
-// UpdatePartner 
+// Update Partner 
 func UpdatePartner(db *sql.DB, p *Partner) error {
 	var exists int
 	err := db.QueryRow("SELECT COUNT(*) FROM partners WHERE id = ?", p.ID).Scan(&exists)
@@ -101,7 +101,7 @@ func UpdatePartner(db *sql.DB, p *Partner) error {
 	return err
 }
 
-// DeletePartner 
+// Delete Partner 
 func DeletePartner(db *sql.DB, id int) error {
 	query := "DELETE FROM partners WHERE id = ?"
 	result, err := db.Exec(query, id)

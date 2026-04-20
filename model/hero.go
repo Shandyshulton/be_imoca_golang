@@ -14,7 +14,7 @@ type Hero struct {
 	Image          string `json:"image"`
 }
 
-// GetHero
+// Get Hero
 func GetHero(db *sql.DB) (Hero, error) {
 	var h Hero
 	query := `SELECT id, badge_text, title, title_highlight, description, image FROM hero_section LIMIT 1`
@@ -26,7 +26,7 @@ func GetHero(db *sql.DB) (Hero, error) {
 	return h, err
 }
 
-// UpdateHero
+// Update Hero
 func UpdateHero(db *sql.DB, h *Hero) error {
 	query := `UPDATE hero_section SET badge_text = ?, title = ?, title_highlight = ?, description = ?, image = ? WHERE id = ?`
 	_, err := db.Exec(query, h.BadgeText, h.Title, h.TitleHighlight, h.Description, h.Image, h.ID)

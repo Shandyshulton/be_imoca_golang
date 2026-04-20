@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// UpdateServicesHandler
+// Update Services
 func UpdateServicesHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input model.ServicesSectionResponse
@@ -42,7 +42,7 @@ func UpdateServicesHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// GetServicesHandler 
+// Get Services
 func GetServicesHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		data, err := model.GetServices(db)

@@ -18,7 +18,7 @@ type ServicesSectionResponse struct {
 	Items        []ServiceItem `json:"items"`
 }
 
-// GetServices 
+// Get Services 
 func GetServices(db *sql.DB) (ServicesSectionResponse, error) {
 	var resp ServicesSectionResponse
 	resp.Items = []ServiceItem{} 
@@ -46,7 +46,7 @@ func GetServices(db *sql.DB) (ServicesSectionResponse, error) {
 	return resp, nil
 }
 
-// UpdateServices
+// Update Services
 func UpdateServices(db *sql.DB, s *ServicesSectionResponse) error {
 	tx, err := db.Begin()
 	if err != nil {

@@ -8,6 +8,7 @@ type MissionSection struct {
 	Description  string `json:"description"`
 }
 
+// Get Mission
 func GetMission(db *sql.DB) (MissionSection, error) {
 	var m MissionSection
 	query := `SELECT id, COALESCE(section_title, ''), COALESCE(description, '') 
@@ -16,6 +17,7 @@ func GetMission(db *sql.DB) (MissionSection, error) {
 	return m, err
 }
 
+// Update Mission
 func UpdateMission(db *sql.DB, m *MissionSection) error {
 	query := `UPDATE mission_section SET section_title = ?, description = ? WHERE id = ?`
 	_, err := db.Exec(query, m.SectionTitle, m.Description, 1) // Paksa update ID 1

@@ -2,15 +2,12 @@ package controller
 
 import (
 	"be_imoca_golang/model"
+	"be_imoca_golang/util"
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +16,7 @@ type NewsUri struct {
 	ID int `uri:"id" binding:"required"`
 }
 
-// GetNewsHandler
+// Get News
 func GetNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyword := c.Query("title")
@@ -38,16 +35,15 @@ func GetNewsHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// CreateNewsHandler
+// Create News
 func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		title := c.PostForm("title")
 		summary := c.PostForm("summary")
 		source := c.PostForm("source")
-		badge := c.PostForm("badge") // AMBIL BADGE DARI FORM
+		badge := c.PostForm("badge")
 		url := c.PostForm("url")
 
-		// Validasi: Badge juga harus divalidasi
 		if strings.TrimSpace(title) == "" || strings.TrimSpace(summary) == "" ||
 			strings.TrimSpace(source) == "" || strings.TrimSpace(badge) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -57,19 +53,18 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		file, err := c.FormFile("image")
+		newImageName, err := util.HandleFileUpload(c, "image", "news", "")
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Gambar berita wajib diunggah!"})
+			log.Printf("[ERROR] Gagal upload gambar berita: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": err.Error(), // Pesan "ukuran file terlalu besar..." muncul di sini
+			})
 			return
 		}
 
-		// Upload Logic
-		extension := filepath.Ext(file.Filename)
-		newFileName := fmt.Sprintf("news-%d%s", time.Now().UnixNano(), extension)
-		targetPath := filepath.Join("storage", "uploads", "news", newFileName)
-
-		if err := c.SaveUploadedFile(file, targetPath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan gambar"})
+		if newImageName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Gambar berita wajib diunggah!"})
 			return
 		}
 
@@ -77,9 +72,9 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			Title:   title,
 			Summary: summary,
 			Source:  source,
-			Badge:   badge, // MASUKKAN KE MODEL
+			Badge:   badge,
 			URL:     url,
-			Image:   newFileName,
+			Image:   newImageName,
 		}
 
 		if err := model.CreateNews(db, &n); err != nil {
@@ -96,7 +91,7 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateNewsHandler
+// Update News
 func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var uri NewsUri
@@ -107,6 +102,7 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 
 		oldNews, err := model.GetNewsByID(db, uri.ID)
 		if err != nil {
+			log.Printf("[WARN] Update gagal, berita ID %d tidak ditemukan", uri.ID)
 			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Berita tidak ditemukan"})
 			return
 		}
@@ -114,11 +110,21 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 		title := c.PostForm("title")
 		summary := c.PostForm("summary")
 		source := c.PostForm("source")
-		badge := c.PostForm("badge") // AMBIL BADGE DARI FORM
+		badge := c.PostForm("badge")
 		url := c.PostForm("url")
 
 		if strings.TrimSpace(title) == "" || strings.TrimSpace(badge) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Judul dan Badge tidak boleh kosong!"})
+			return
+		}
+
+		newImageName, err := util.HandleFileUpload(c, "image", "news", oldNews.Image)
+		if err != nil {
+			log.Printf("[ERROR] Gagal proses gambar berita: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": err.Error(),
+			})
 			return
 		}
 
@@ -127,29 +133,18 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			Title:   title,
 			Summary: summary,
 			Source:  source,
-			Badge:   badge, // MASUKKAN KE MODEL
+			Badge:   badge,
 			URL:     url,
-			Image:   oldNews.Image,
-		}
-
-		// Handle Image Update (Sama seperti sebelumnya)
-		file, err := c.FormFile("image")
-		if err == nil {
-			extension := filepath.Ext(file.Filename)
-			newFileName := fmt.Sprintf("news-%d%s", time.Now().UnixNano(), extension)
-			targetPath := filepath.Join("storage", "uploads", "news", newFileName)
-
-			if err := c.SaveUploadedFile(file, targetPath); err == nil {
-				os.Remove(filepath.Join("storage", "uploads", "news", oldNews.Image))
-				updatedNews.Image = newFileName
-			}
+			Image:   newImageName,
 		}
 
 		if err := model.UpdateNews(db, &updatedNews); err != nil {
+			log.Printf("[DATABASE ERROR] Gagal update berita ID %d: %v", uri.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal update database"})
 			return
 		}
 
+		log.Printf("[SUCCESS] Berita ID %d berhasil diperbarui", uri.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"code":    "200",
 			"message": "Berita berhasil diperbarui!",
@@ -158,18 +153,37 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// Handler lainnya (Delete, GetByID) tetap sama karena sudah menggunakan ID
+// Delete News
 func DeleteNewsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, _ := strconv.Atoi(c.Param("id"))
-		if err := model.DeleteNews(db, id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menghapus berita"})
+		id, err := strconv.Atoi(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Berita berhasil dihapus"})
+
+		news, err := model.GetNewsByID(db, id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Berita tidak ditemukan"})
+			return
+		}
+
+		if err := model.DeleteNews(db, id); err != nil {
+			log.Printf("[DB ERROR] Gagal hapus berita ID %d: %v", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menghapus berita dari database"})
+			return
+		}
+
+		util.DeleteFile("news", news.Image)
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    "200",
+			"message": "Berita dan file gambar berhasil dihapus",
+		})
 	}
 }
 
+// Get News ID
 func GetNewsByIDHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var uri NewsUri

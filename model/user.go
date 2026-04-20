@@ -13,7 +13,7 @@ type User struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// CreateUser
+// Create User
 func CreateUser(db *sql.DB, fullName, username, password string) error {
 	// Hash Password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

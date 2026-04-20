@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Get Mission
 func GetMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		data, err := model.GetMission(db)
@@ -25,6 +26,7 @@ func GetMissionHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// Update Mission
 func UpdateMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input model.MissionSection

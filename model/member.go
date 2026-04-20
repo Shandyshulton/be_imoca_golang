@@ -15,7 +15,7 @@ type Member struct {
 	Image       string `json:"image" form:"image"`
 }
 
-// GetAllMembers mengambil semua data anggota tim
+// Get All Members 
 func GetAllMembers(db *sql.DB, keyword string) ([]Member, error) {
 	var rows *sql.Rows
 	var err error
@@ -52,7 +52,7 @@ func GetAllMembers(db *sql.DB, keyword string) ([]Member, error) {
 	return members, nil
 }
 
-// GetMemberByID mengambil satu data anggota berdasarkan ID
+// Get Member ID 
 func GetMemberByID(db *sql.DB, id int) (Member, error) {
 	var m Member
 	query := `SELECT id, name, email, 
@@ -66,7 +66,7 @@ func GetMemberByID(db *sql.DB, id int) (Member, error) {
 	return m, err
 }
 
-// CreateMember menambahkan anggota baru
+// Create Member 
 func CreateMember(db *sql.DB, m *Member) error {
 	query := "INSERT INTO members (name, email, phone, description, link, image) VALUES (?, ?, ?, ?, ?, ?)"
 
@@ -84,7 +84,7 @@ func CreateMember(db *sql.DB, m *Member) error {
 	return nil
 }
 
-// UpdateMember memperbarui data anggota
+// Update Member 
 func UpdateMember(db *sql.DB, m *Member) error {
 	var exists int
 	err := db.QueryRow("SELECT COUNT(*) FROM members WHERE id = ?", m.ID).Scan(&exists)
@@ -101,7 +101,7 @@ func UpdateMember(db *sql.DB, m *Member) error {
 	return err
 }
 
-// DeleteMember menghapus data anggota
+// Delete Member 
 func DeleteMember(db *sql.DB, id int) error {
 	query := "DELETE FROM members WHERE id = ?"
 	result, err := db.Exec(query, id)

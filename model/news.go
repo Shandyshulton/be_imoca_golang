@@ -17,7 +17,7 @@ type News struct {
 	PublishedAt time.Time `json:"published_at"`
 }
 
-// Get All News
+// Get News
 func GetAllNews(db *sql.DB, keyword string) ([]News, error) {
 	var rows *sql.Rows
 	var err error
@@ -93,7 +93,7 @@ func UpdateNews(db *sql.DB, n *News) error {
 	return nil
 }
 
-// GetNewsByID
+// Get News ID
 func GetNewsByID(db *sql.DB, id int) (News, error) {
 	var n News
 	query := "SELECT id, title, COALESCE(summary, ''), COALESCE(source, ''), COALESCE(badge, 'REGULASI'), url, image, published_at FROM news WHERE id = ?"

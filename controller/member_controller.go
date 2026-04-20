@@ -2,15 +2,12 @@ package controller
 
 import (
 	"be_imoca_golang/model"
+	"be_imoca_golang/util"
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +16,7 @@ type MemberUri struct {
 	ID int `uri:"id" binding:"required"`
 }
 
-// GetMembersHandler 
+// Get Members
 func GetMembersHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		keyword := c.Query("name")
@@ -40,7 +37,7 @@ func GetMembersHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// GetMemberByIDHandler 
+// Get Member ID
 func GetMemberByIDHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var uri MemberUri
@@ -63,7 +60,7 @@ func GetMemberByIDHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// CreateMemberHandler 
+// Create Member
 func CreateMemberHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var m model.Member
@@ -79,25 +76,19 @@ func CreateMemberHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		file, err := c.FormFile("image")
-		if err == nil {
-			if !isAllowedExtension(file.Filename) {
-				c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Format file tidak didukung"})
-				return
-			}
-
-			extension := filepath.Ext(file.Filename)
-			newFileName := fmt.Sprintf("member-%d%s", time.Now().UnixNano(), extension)
-			targetPath := filepath.Join("storage", "uploads", "members", newFileName)
-
-			if err := c.SaveUploadedFile(file, targetPath); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan gambar"})
-				return
-			}
-			m.Image = newFileName
+		newImageName, err := util.HandleFileUpload(c, "image", "members", "")
+		if err != nil {
+			log.Printf("[ERROR] Gagal upload gambar member: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": err.Error(), 
+			})
+			return
 		}
+		m.Image = newImageName
 
 		if err := model.CreateMember(db, &m); err != nil {
+			log.Printf("[DB ERROR] %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Database error: " + err.Error()})
 			return
 		}
@@ -110,7 +101,7 @@ func CreateMemberHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateMemberHandler
+// Update Member
 func UpdateMemberHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var uri MemberUri
@@ -121,7 +112,18 @@ func UpdateMemberHandler(db *sql.DB) gin.HandlerFunc {
 
 		oldMember, err := model.GetMemberByID(db, uri.ID)
 		if err != nil {
+			log.Printf("[WARN] Update member ID %d gagal: Tidak ditemukan", uri.ID)
 			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Anggota tidak ditemukan"})
+			return
+		}
+
+		newImageName, err := util.HandleFileUpload(c, "image", "members", oldMember.Image)
+		if err != nil {
+			log.Printf("[ERROR] Gagal proses gambar member: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": err.Error(),
+			})
 			return
 		}
 
@@ -132,7 +134,7 @@ func UpdateMemberHandler(db *sql.DB) gin.HandlerFunc {
 			Phone:       c.PostForm("phone"),
 			Description: c.PostForm("description"),
 			Link:        c.PostForm("link"),
-			Image:       oldMember.Image,
+			Image:       newImageName,
 		}
 
 		if strings.TrimSpace(m.Name) == "" {
@@ -140,50 +142,42 @@ func UpdateMemberHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		file, err := c.FormFile("image")
-		if err == nil {
-			if !isAllowedExtension(file.Filename) {
-				c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Format gambar tidak didukung!"})
-				return
-			}
-
-			extension := filepath.Ext(file.Filename)
-			newFileName := fmt.Sprintf("member-%d%s", time.Now().UnixNano(), extension)
-			targetPath := filepath.Join("storage", "uploads", "members", newFileName)
-
-			if err := c.SaveUploadedFile(file, targetPath); err == nil {
-				if oldMember.Image != "" {
-					os.Remove(filepath.Join("storage", "uploads", "members", oldMember.Image))
-				}
-				m.Image = newFileName
-			}
-		}
-
 		if err := model.UpdateMember(db, &m); err != nil {
+			log.Printf("[DB ERROR] Gagal update member ID %d: %v", uri.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal update database"})
 			return
 		}
 
+		log.Printf("[SUCCESS] Member ID %d berhasil diperbarui", uri.ID)
 		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Data berhasil diperbarui", "data": m})
 	}
 }
 
-// DeleteMemberHandler 
+// Delete Member
 func DeleteMemberHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		idStr := c.Param("id")
-		id, _ := strconv.Atoi(idStr)
-
-		m, err := model.GetMemberByID(db, id)
-		if err == nil && m.Image != "" {
-			os.Remove(filepath.Join("storage", "uploads", "members", m.Image))
-		}
-
-		if err := model.DeleteMember(db, id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal hapus data"})
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID harus berupa angka"})
 			return
 		}
 
+		member, err := model.GetMemberByID(db, id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Anggota tidak ditemukan"})
+			return
+		}
+
+		if err := model.DeleteMember(db, id); err != nil {
+			log.Printf("[DB ERROR] Gagal hapus member ID %d: %v", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal hapus data dari database"})
+			return
+		}
+
+		util.DeleteFile("members", member.Image)
+
+		log.Printf("[SUCCESS] Member ID %d dan filenya berhasil dihapus", id)
 		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Anggota berhasil dihapus"})
 	}
 }

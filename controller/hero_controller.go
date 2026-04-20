@@ -2,19 +2,16 @@ package controller
 
 import (
 	"be_imoca_golang/model"
+	"be_imoca_golang/util" 
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// GetHeroHandler
+// Get Hero
 func GetHeroHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hero, err := model.GetHero(db)
@@ -27,7 +24,7 @@ func GetHeroHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// UpdateHeroHandler
+// Update Hero
 func UpdateHeroHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Println("[INFO] Mencoba memperbarui Hero Section...")
@@ -43,13 +40,21 @@ func UpdateHeroHandler(db *sql.DB) gin.HandlerFunc {
 		highlight := c.PostForm("title_highlight")
 		desc := c.PostForm("description")
 
-		// Empty Validation
 		if strings.TrimSpace(badge) == "" || strings.TrimSpace(title) == "" ||
 			strings.TrimSpace(highlight) == "" || strings.TrimSpace(desc) == "" {
-			log.Println("[WARN] Update Hero ditolak: Form tidak lengkap")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    "400",
 				"message": "Badge, Title, Highlight, dan Description wajib diisi!",
+			})
+			return
+		}
+
+		newImageName, err := util.HandleFileUpload(c, "image", "hero", oldHero.Image)
+		if err != nil {
+			log.Printf("[ERROR] Gagal proses gambar hero: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "400",
+				"message": err.Error(), // Pesan "10MB" atau "Format salah" akan muncul di sini
 			})
 			return
 		}
@@ -60,42 +65,7 @@ func UpdateHeroHandler(db *sql.DB) gin.HandlerFunc {
 			Title:          title,
 			TitleHighlight: highlight,
 			Description:    desc,
-			Image:          oldHero.Image,
-		}
-
-		file, err := c.FormFile("image")
-		if err == nil {
-			// Validatation file extension
-			if !isAllowedExtension(file.Filename) {
-				log.Printf("[REJECTED] Format file tidak diizinkan: %s", file.Filename)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": "Format file tidak didukung! Gunakan .jpg, .jpeg, atau .png",
-				})
-				return
-			}
-
-			// Validation Size File (Maks 10MB)
-			maxMB := 10
-			var maxFileSize int64 = int64(maxMB) * 1024 * 1024
-			if file.Size > maxFileSize {
-				log.Printf("[REJECTED] File terlalu besar: %d bytes", file.Size)
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    "400",
-					"message": fmt.Sprintf("Ukuran file terlalu besar! Maksimal adalah %dMB", maxMB),
-				})
-				return
-			}
-
-			newFileName := fmt.Sprintf("hero-%d%s", time.Now().UnixNano(), filepath.Ext(file.Filename))
-			targetPath := filepath.Join("storage", "uploads", "hero", newFileName)
-
-			if err := c.SaveUploadedFile(file, targetPath); err == nil {
-				if oldHero.Image != "" {
-					os.Remove(filepath.Join("storage", "uploads", "hero", oldHero.Image))
-				}
-				updatedHero.Image = newFileName
-			}
+			Image:          newImageName, // Nama file hasil olahan helper
 		}
 
 		if err := model.UpdateHero(db, &updatedHero); err != nil {

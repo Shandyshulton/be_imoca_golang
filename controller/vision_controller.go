@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Get Vision
 func GetVisionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		data, err := model.GetVision(db)
@@ -28,6 +29,7 @@ func GetVisionHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// Update Vision
 func UpdateVisionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input model.VisionSectionResponse

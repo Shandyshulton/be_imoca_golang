@@ -8,8 +8,8 @@ import (
 type VisionItem struct {
 	ID          int    `json:"id"`
 	Icon        string `json:"icon"`        // Emoji
-	Title       string `json:"title"`       // Judul Poin Visi
-	Description string `json:"description"` // Penjelasan Visi
+	Title       string `json:"title"`       
+	Description string `json:"description"` 
 }
 
 type VisionSectionResponse struct {

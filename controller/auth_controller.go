@@ -18,7 +18,7 @@ type AuthRequest struct {
 	Password string `json:"password"`
 }
 
-// RegisterHandler
+// Register Handler
 func RegisterHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req AuthRequest
