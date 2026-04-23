@@ -26,6 +26,7 @@ func InitRoutes(r *gin.RouterGroup, db *sql.DB) {
 	public := r.Group("/public")
 	{
 		public.GET("/hero", controller.GetHeroHandler(db))
+		public.GET("/hero/images", controller.GetHeroImagesHandler(db))
 		public.GET("/partners", controller.GetPartnersHandler(db))
 		public.GET("/partners/:id", controller.GetPartnerByIDHandler(db))
 		public.GET("/members", controller.GetMembersHandler(db))
@@ -60,7 +61,10 @@ func InitRoutes(r *gin.RouterGroup, db *sql.DB) {
 		admin.DELETE("/news/:id", controller.DeleteNewsHandler(db))
 
 		// EDITABLE CONTENT
-		admin.POST("/hero", controller.UpdateHeroHandler(db))
+		admin.PUT("/hero", controller.UpdateHeroHandler(db))
+		admin.POST("/hero/images", controller.AddHeroImageHandler(db))
+		admin.DELETE("/hero/images/:id", controller.DeleteHeroImageHandler(db))
+
 		admin.PUT("/services", controller.UpdateServicesHandler(db))
 		admin.PUT("/vision", controller.UpdateVisionHandler(db))
 		admin.PUT("/mission", controller.UpdateMissionHandler(db))

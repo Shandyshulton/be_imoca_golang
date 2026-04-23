@@ -55,18 +55,20 @@ func CreateNews(db *sql.DB, n *News) error {
 	if n.Badge == "" {
 		n.Badge = "REGULASI"
 	}
-	
-	now := time.Now()
-	query := "INSERT INTO news (title, summary, source, badge, url, image, published_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
 
-	result, err := db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, now)
+	// Gunakan PublishedAt dari input, fallback ke sekarang kalau zero
+	if n.PublishedAt.IsZero() {
+		n.PublishedAt = time.Now()
+	}
+
+	query := "INSERT INTO news (title, summary, source, badge, url, image, published_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	result, err := db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, n.PublishedAt)
 	if err != nil {
 		return err
 	}
 
 	lastID, _ := result.LastInsertId()
 	n.ID = int(lastID)
-	n.PublishedAt = now
 
 	return nil
 }
@@ -84,8 +86,8 @@ func UpdateNews(db *sql.DB, n *News) error {
 		return errors.New("data berita tidak ditemukan di database")
 	}
 
-	query := `UPDATE news SET title = ?, summary = ?, source = ?, badge = ?, url = ?, image = ? WHERE id = ?`
-	_, err = db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, n.ID)
+	query := `UPDATE news SET title = ?, summary = ?, source = ?, badge = ?, url = ?, image = ?, published_at = ? WHERE id = ?`
+	_, err = db.Exec(query, n.Title, n.Summary, n.Source, n.Badge, n.URL, n.Image, n.PublishedAt, n.ID)
 	if err != nil {
 		return err
 	}

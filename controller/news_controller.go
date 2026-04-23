@@ -4,6 +4,7 @@ import (
 	"be_imoca_golang/model"
 	"be_imoca_golang/util"
 	"database/sql"
+	"time"
 	"log"
 	"net/http"
 	"strconv"
@@ -77,6 +78,18 @@ func CreateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			Image:   newImageName,
 		}
 
+		// Baca published_at dari form, fallback ke hari ini kalau kosong
+		publishedAtStr := c.PostForm("published_at")
+		if publishedAtStr != "" {
+			if parsed, err := time.Parse("2006-01-02", publishedAtStr); err == nil {
+				n.PublishedAt = parsed
+			} else {
+				n.PublishedAt = time.Now()
+			}
+		} else {
+			n.PublishedAt = time.Now()
+		}
+
 		if err := model.CreateNews(db, &n); err != nil {
 			log.Printf("[DB ERROR]: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan ke database"})
@@ -128,14 +141,23 @@ func UpdateNewsHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		publishedAtStr := c.PostForm("published_at")
+		publishedAt := oldNews.PublishedAt // fallback ke date lama kalau kosong
+		if publishedAtStr != "" {
+			if parsed, err := time.Parse("2006-01-02", publishedAtStr); err == nil {
+				publishedAt = parsed
+			}
+		}
+
 		updatedNews := model.News{
-			ID:      uri.ID,
-			Title:   title,
-			Summary: summary,
-			Source:  source,
-			Badge:   badge,
-			URL:     url,
-			Image:   newImageName,
+			ID:          uri.ID,
+			Title:       title,
+			Summary:     summary,
+			Source:      source,
+			Badge:       badge,
+			URL:         url,
+			Image:       newImageName,
+			PublishedAt: publishedAt, // ← tambahkan ini
 		}
 
 		if err := model.UpdateNews(db, &updatedNews); err != nil {
