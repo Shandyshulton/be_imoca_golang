@@ -44,12 +44,8 @@ func (vc *VisionController) UpdateVision(c *gin.Context) {
 			return err
 		}
 
-		if err := tx.Exec("DELETE FROM vision_items").Error; err != nil {
-			return err
-		}
-
-		if len(input.Items) > 0 {
-			if err := tx.Create(&input.Items).Error; err != nil {
+		for _, item := range input.Items {
+			if err := tx.Save(&item).Error; err != nil {
 				return err
 			}
 		}
