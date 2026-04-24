@@ -1,63 +1,82 @@
-package controller
+package controllers
 
 import (
-	"be_imoca_golang/model" 
-	"database/sql"
-	"log"
+	"be_imoca_golang/model"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-// Update Services
-func UpdateServicesHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var input model.ServicesSectionResponse
-		
-		if err := c.ShouldBindJSON(&input); err != nil {
-			log.Printf("[ERROR] Binding Services Gagal: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400", 
-				"message": "Format data tidak sesuai, pastikan semua bagian terisi dengan benar",
-			})
-			return
-		}
-
-		log.Printf("[DEBUG] Update Services - Title: %s, Items: %d", 
-			input.SectionTitle, len(input.Items))
-
-		if err := model.UpdateServices(db, &input); err != nil {
-			log.Printf("[DB ERROR] Update Data Services Gagal: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500", 
-				"message": "Terjadi kesalahan sistem saat menyimpan perubahan layanan",
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200", 
-			"message": "Data layanan dan detail informasi berhasil diperbarui!",
-		})
-	}
+type ServiceController struct {
+	DB *gorm.DB
 }
 
-// Get Services
-func GetServicesHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		data, err := model.GetServices(db)
-		if err != nil {
-			log.Printf("[ERROR] Ambil Data Services Gagal: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500", 
-				"message": "Gagal mengambil data layanan dari server",
-			})
-			return
+// Get Services (Public)
+func (sc *ServiceController) GetServices(c *gin.Context) {
+	var setting model.ServiceSetting
+	var items []model.ServiceItem
+
+	// Ambil judul section
+	sc.DB.First(&setting)
+
+	// Ambil semua item layanan
+	sc.DB.Order("id asc").Find(&items)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": "200",
+		"data": model.ServicesResponse{
+			SectionTitle: setting.SectionTitle,
+			Items:        items,
+		},
+	})
+}
+
+// Update Services (Admin)
+func (sc *ServiceController) UpdateServices(c *gin.Context) {
+	var input model.ServicesResponse
+	
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "400",
+			"message": "Format data tidak sesuai",
+		})
+		return
+	}
+
+	// Jalankan Transaksi
+	err := sc.DB.Transaction(func(tx *gorm.DB) error {
+		// 1. Update Judul Section (ID 1)
+		if err := tx.Model(&model.ServiceSetting{}).Where("id = ?", 1).
+			Update("section_title", input.SectionTitle).Error; err != nil {
+			return err
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code": "200", 
-			"data": data,
+		// 2. Hapus semua item layanan lama
+		if err := tx.Exec("DELETE FROM services_items").Error; err != nil {
+			return err
+		}
+
+		// 3. Masukkan item layanan baru jika ada
+		if len(input.Items) > 0 {
+			if err := tx.Create(&input.Items).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    "500",
+			"message": "Gagal memperbarui data layanan: " + err.Error(),
 		})
+		return
 	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    "200",
+		"message": "Data layanan berhasil diperbarui!",
+	})
 }

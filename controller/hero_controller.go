@@ -1,135 +1,153 @@
-package controller
+package controllers
 
 import (
 	"be_imoca_golang/model"
-	"be_imoca_golang/util"
-	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
+	"os"
+	"strings"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-// Get Hero
-func GetHeroHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		hero, err := model.GetHero(db)
-		if err != nil {
-			log.Printf("[ERROR] Gagal ambil hero: %v", err)
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Data Hero belum diatur"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"code": "200", "data": hero})
-	}
+type HeroController struct {
+	DB *gorm.DB
 }
 
-// Update Hero
-func UpdateHeroHandler(db *sql.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        var input model.Hero
-        
-        if err := c.ShouldBind(&input); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Gagal membaca form"})
-            return
-        }
-
-        oldHero, _ := model.GetHero(db)
-
-        newImageName, err := util.HandleFileUpload(c, "image", "hero", oldHero.Image)
-        if err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": err.Error()})
-            return
-        }
-
-        input.ID = oldHero.ID
-        input.Image = newImageName
-
-        if err := model.UpdateHero(db, &input); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "DB Error"})
-            return
-        }
-
-        c.JSON(http.StatusOK, gin.H{"code": "200", "data": input})
-    }
+// Get Hero (Public)
+func (hc *HeroController) GetHero(c *gin.Context) {
+	var hero model.Hero
+	if err := hc.DB.First(&hero).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Data Hero belum diatur"})
+		return
+	}
+	c.JSON(http.StatusOK, hero)
 }
 
-// ── Hero Images ──────────────────────────────────────────────────────────────
-
-// Get Hero Images
-func GetHeroImagesHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		hero, err := model.GetHero(db)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Data hero tidak ditemukan"})
-			return
-		}
-
-		images, err := model.GetHeroImages(db, hero.ID)
-		if err != nil {
-			log.Printf("[ERROR] Gagal ambil hero images: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal mengambil data gambar"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"code": "200", "data": images})
+// Update Hero (Admin)
+func (hc *HeroController) UpdateHero(c *gin.Context) {
+	var hero model.Hero
+	if err := hc.DB.First(&hero).Error; err != nil {
+		hero = model.Hero{}
 	}
+
+	oldImage := hero.Image
+
+	hero.BadgeText = c.DefaultPostForm("badge_text", hero.BadgeText)
+	hero.Title = c.DefaultPostForm("title", hero.Title)
+	hero.TitleHighlight = c.DefaultPostForm("title_highlight", hero.TitleHighlight)
+	hero.Description = c.DefaultPostForm("description", hero.Description)
+
+	// Handle Image Upload
+	file, err := c.FormFile("image")
+	if err == nil {
+		uploadDir := "storage/uploads/hero/"
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.MkdirAll(uploadDir, os.ModePerm)
+		}
+
+		newFileName := fmt.Sprintf("hero-%s%s", uuid.New().String(), filepath.Ext(file.Filename))
+		if err := c.SaveUploadedFile(file, uploadDir+newFileName); err == nil {
+			// Hapus gambar lama
+			if oldImage != "" {
+				os.Remove(uploadDir + oldImage)
+			}
+			hero.Image = newFileName
+		}
+	}
+
+	if err := hc.DB.Save(&hero).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal update hero"})
+		return
+	}
+	c.JSON(http.StatusOK, hero)
 }
 
-// Add Hero Image
-func AddHeroImageHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		hero, err := model.GetHero(db)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Data hero tidak ditemukan"})
-			return
-		}
-
-		// upload file baru (tidak ada old image karena ini insert)
-		filename, err := util.HandleFileUpload(c, "image", "hero", "")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": err.Error()})
-			return
-		}
-
-		img := model.HeroImage{
-			HeroID: hero.ID,
-			Image:  filename,
-			Order:  0, // default, bisa diatur dari frontend
-		}
-
-		if err := model.AddHeroImage(db, &img); err != nil {
-			log.Printf("[ERROR] Gagal tambah hero image: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menyimpan gambar"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"code": "200", "data": img})
-	}
+// Get All Hero Images
+func (hc *HeroController) GetHeroImages(c *gin.Context) {
+	var images []model.HeroImage
+	hc.DB.Order("sort_order asc").Find(&images)
+	c.JSON(http.StatusOK, images)
 }
 
 // Delete Hero Image
-func DeleteHeroImageHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		idStr := c.Param("id")
-		var imageID int
-		if _, err := fmt.Sscanf(idStr, "%d", &imageID); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
-			return
-		}
+func (hc *HeroController) DeleteHeroImage(c *gin.Context) {
+	id := c.Param("id")
+	var img model.HeroImage
 
-		filename, err := model.DeleteHeroImage(db, imageID)
-		if err != nil {
-			log.Printf("[ERROR] Gagal hapus hero image: %v", err)
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": err.Error()})
-			return
-		}
-
-		// hapus file fisik dari disk
-		if filename != "" {
-			util.DeleteFile("hero", filename)
-		}
-
-		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Gambar berhasil dihapus"})
+	if err := hc.DB.First(&img, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Gambar tidak ditemukan"})
+		return
 	}
+
+	if err := hc.DB.Delete(&img).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal hapus data"})
+		return
+	}
+
+	// Hapus file fisik
+	os.Remove("storage/uploads/hero/" + img.Image)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Gambar berhasil dihapus"})
+}
+
+// Add Hero Image (Admin)
+func (hc *HeroController) AddHeroImage(c *gin.Context) {
+	var hero model.Hero
+	var heroImage model.HeroImage
+
+	if err := hc.DB.First(&hero).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Data Hero utama tidak ditemukan. Harap isi data Hero utama terlebih dahulu."})
+		return
+	}
+
+	heroImage.HeroID = hero.ID
+
+	sortOrder := c.DefaultPostForm("sort_order", "0")
+	fmt.Sscanf(sortOrder, "%d", &heroImage.SortOrder)
+
+	// Handle File Upload
+	file, err := c.FormFile("image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File gambar wajib diunggah"})
+		return
+	}
+
+	// Validasi Ukuran (Max 10MB)
+	if file.Size > 10*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file terlalu besar (Maksimal 10MB)"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Hanya mendukung format .jpg, .jpeg, dan .png"})
+		return
+	}
+
+	uploadDir := "storage/uploads/hero/"
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		os.MkdirAll(uploadDir, os.ModePerm)
+	}
+
+	newFileName := fmt.Sprintf("hero-gallery-%s%s", uuid.New().String(), ext)
+	dst := uploadDir + newFileName
+
+	if err := c.SaveUploadedFile(file, dst); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan gambar ke server"})
+		return
+	}
+
+	heroImage.Image = newFileName
+
+	if err := hc.DB.Create(&heroImage).Error; err != nil {
+		os.Remove(dst)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan ke database: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, heroImage)
 }

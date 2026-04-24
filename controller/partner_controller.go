@@ -1,202 +1,167 @@
-package controller
+package controllers
 
 import (
 	"be_imoca_golang/model"
-	"be_imoca_golang/util"
-	"database/sql"
-	"log"
+	"fmt"
 	"net/http"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-type PartnerUri struct {
-	ID int `uri:"id" binding:"required"`
+type PartnerController struct {
+	DB *gorm.DB
 }
 
-// Get Partners
-func GetPartnersHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		keyword := c.Query("name")
-		partners, err := model.GetAllPartners(db, keyword)
-		if err != nil {
-			log.Printf("[ERROR] Gagal ambil data partner: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal memuat daftar mitra",
-			})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Daftar mitra berhasil dimuat",
-			"data":    partners,
-		})
+// Get All Partners
+func (pc *PartnerController) GetAll(c *gin.Context) {
+	var partners []model.Partner
+	keyword := c.Query("name")
+
+	query := pc.DB.Order("id desc")
+	if keyword != "" {
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
+
+	if err := query.Find(&partners).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat daftar mitra"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": partners})
+}
+
+// Get Partner By ID
+func (pc *PartnerController) GetByID(c *gin.Context) {
+	id := c.Param("id")
+	var partner model.Partner
+	if err := pc.DB.First(&partner, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mitra tidak ditemukan"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": partner})
 }
 
 // Create Partner
-func CreatePartnerHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		name := c.PostForm("name")
-		email := c.PostForm("email")
-		phone := c.PostForm("phone")
-		description := c.PostForm("description")
-		link := c.PostForm("link")
+func (pc *PartnerController) Create(c *gin.Context) {
+	var partner model.Partner
+	partner.Name = c.PostForm("name")
+	partner.Email = c.PostForm("email")
+	partner.Phone = c.PostForm("phone")
+	partner.Description = c.PostForm("description")
+	partner.Link = c.PostForm("link")
 
-		if strings.TrimSpace(name) == "" || strings.TrimSpace(email) == "" ||
-			strings.TrimSpace(phone) == "" || strings.TrimSpace(description) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": "Nama, Email, Telepon, dan Deskripsi wajib diisi!",
-			})
-			return
-		}
-
-		newImageName, err := util.HandleFileUpload(c, "image", "partners", "")
-		if err != nil {
-			log.Printf("[WARN] Upload ditolak: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": err.Error(), // Pesan 10MB akan muncul di sini
-			})
-			return
-		}
-
-		if newImageName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Logo mitra wajib diunggah!"})
-			return
-		}
-
-		p := model.Partner{
-			Name:        name,
-			Email:       email,
-			Phone:       phone,
-			Description: description,
-			Link:        link,
-			Image:       newImageName,
-		}
-
-		if err := model.CreatePartner(db, &p); err != nil {
-			log.Printf("[DATABASE ERROR] %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal simpan ke database"})
-			return
-		}
-
-		c.JSON(http.StatusCreated, gin.H{
-			"code":    "201",
-			"message": "Mitra berhasil didaftarkan!",
-			"data":    p,
-		})
+	if strings.TrimSpace(partner.Name) == "" || strings.TrimSpace(partner.Email) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama dan Email wajib diisi"})
+		return
 	}
+
+	file, err := c.FormFile("image")
+	if err == nil {
+		// Validasi Ukuran (Max 10MB)
+		if file.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 10MB"})
+			return
+		}
+
+		// Validasi Ekstensi
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Hanya mendukung .jpg, .jpeg, .png"})
+			return
+		}
+
+		uploadDir := "storage/uploads/partners/"
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.MkdirAll(uploadDir, os.ModePerm)
+		}
+
+		newFileName := fmt.Sprintf("partner-%s%s", uuid.New().String(), ext)
+		if err := c.SaveUploadedFile(file, uploadDir+newFileName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan gambar"})
+			return
+		}
+		partner.Image = newFileName
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Logo mitra wajib diunggah"})
+		return
+	}
+
+	if err := pc.DB.Create(&partner).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan ke database"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "Mitra berhasil didaftarkan", "data": partner})
 }
 
 // Update Partner
-func UpdatePartnerHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var uri PartnerUri
-		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID mitra tidak valid"})
-			return
-		}
-
-		oldPartner, err := model.GetPartnerByID(db, uri.ID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Mitra tidak ditemukan"})
-			return
-		}
-
-		newImageName, err := util.HandleFileUpload(c, "image", "partners", oldPartner.Image)
-		if err != nil {
-			log.Printf("[ERROR] Update gambar ditolak: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": err.Error(),
-			})
-			return
-		}
-
-		p := model.Partner{
-			ID:          uri.ID,
-			Name:        c.PostForm("name"),
-			Email:       c.PostForm("email"),
-			Phone:       c.PostForm("phone"),
-			Description: c.PostForm("description"),
-			Link:        c.PostForm("link"),
-			Image:       newImageName,
-		}
-
-		if strings.TrimSpace(p.Name) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Nama wajib diisi!"})
-			return
-		}
-
-		if err := model.UpdatePartner(db, &p); err != nil {
-			log.Printf("[DATABASE ERROR] Gagal update: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal memperbarui database"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Data mitra berhasil diperbarui!",
-			"data":    p,
-		})
+func (pc *PartnerController) Update(c *gin.Context) {
+	id := c.Param("id")
+	var partner model.Partner
+	if err := pc.DB.First(&partner, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mitra tidak ditemukan"})
+		return
 	}
+
+	oldImage := partner.Image
+	partner.Name = c.DefaultPostForm("name", partner.Name)
+	partner.Email = c.DefaultPostForm("email", partner.Email)
+	partner.Phone = c.DefaultPostForm("phone", partner.Phone)
+	partner.Description = c.DefaultPostForm("description", partner.Description)
+	partner.Link = c.DefaultPostForm("link", partner.Link)
+
+	file, err := c.FormFile("image")
+	if err == nil {
+		if file.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "File maksimal 10MB"})
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung"})
+			return
+		}
+
+		uploadDir := "storage/uploads/partners/"
+		newFileName := fmt.Sprintf("partner-%s%s", uuid.New().String(), ext)
+		
+		if err := c.SaveUploadedFile(file, uploadDir+newFileName); err == nil {
+			if oldImage != "" {
+				os.Remove(uploadDir + oldImage) // Hapus logo lama agar tidak menumpuk
+			}
+			partner.Image = newFileName
+		}
+	}
+
+	if err := pc.DB.Save(&partner).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui database"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Data mitra berhasil diperbarui", "data": partner})
 }
 
 // Delete Partner
-func DeletePartnerHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		idStr := c.Param("id")
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID harus angka"})
-			return
-		}
-
-		partner, err := model.GetPartnerByID(db, id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Mitra tidak ditemukan"})
-			return
-		}
-
-		if err := model.DeletePartner(db, id); err != nil {
-			log.Printf("[ERROR] %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal menghapus mitra"})
-			return
-		}
-
-		util.DeleteFile("partners", partner.Image)
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Mitra dan file logo berhasil dihapus",
-		})
+func (pc *PartnerController) Delete(c *gin.Context) {
+	id := c.Param("id")
+	var partner model.Partner
+	if err := pc.DB.First(&partner, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Mitra tidak ditemukan"})
+		return
 	}
-}
 
-// Get Partner ID
-func GetPartnerByIDHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var uri PartnerUri
-		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID mitra tidak valid"})
-			return
-		}
-
-		partner, err := model.GetPartnerByID(db, uri.ID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Mitra tidak ditemukan"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Detail mitra berhasil dimuat",
-			"data":    partner,
-		})
+	imageToDelete := partner.Image
+	if err := pc.DB.Delete(&partner).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus data"})
+		return
 	}
+
+	if imageToDelete != "" {
+		os.Remove("storage/uploads/partners/" + imageToDelete) // Hapus file fisik
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Mitra dan logo berhasil dihapus"})
 }

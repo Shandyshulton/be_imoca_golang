@@ -1,72 +1,95 @@
 package route
 
 import (
-	"be_imoca_golang/controller"
+	controllers "be_imoca_golang/controller"
 	"be_imoca_golang/middleware"
 	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm" //
 )
 
-func InitRoutes(r *gin.RouterGroup, db *sql.DB) {
-	
+func InitRoutes(r *gin.RouterGroup, db *sql.DB, gormDB *gorm.DB) {
+
 	r.GET("/", func(c *gin.Context) {
 		c.String(http.StatusOK, "IMOCA API - Online")
 	})
 
+	heroCtrl := &controllers.HeroController{DB: gormDB}
+	orgCtrl := &controllers.OrganizationController{DB: gormDB}
+	memberCtrl := &controllers.MemberController{DB: gormDB}
+	partnerCtrl := &controllers.PartnerController{DB: gormDB}
+	serviceCtrl := &controllers.ServiceController{DB: gormDB}
+	missionCtrl := &controllers.MissionController{DB: gormDB}
+	visionCtrl := &controllers.VisionController{DB: gormDB}
+	newsCtrl := &controllers.NewsController{DB: gormDB}
+
 	// Group AUTH /api/auth
 	auth := r.Group("/auth")
 	{
-		auth.POST("/login", controller.LoginHandler(db))
-		auth.POST("/register", controller.RegisterHandler(db))
+		auth.POST("/login", controllers.LoginHandler(db))
+		auth.POST("/register", controllers.RegisterHandler(db))
 	}
 
 	// Group PUBLIC /api/public
 	public := r.Group("/public")
 	{
-		public.GET("/hero", controller.GetHeroHandler(db))
-		public.GET("/hero/images", controller.GetHeroImagesHandler(db))
-		public.GET("/partners", controller.GetPartnersHandler(db))
-		public.GET("/partners/:id", controller.GetPartnerByIDHandler(db))
-		public.GET("/members", controller.GetMembersHandler(db))
-        public.GET("/members/:id", controller.GetMemberByIDHandler(db))
-		public.GET("/news", controller.GetNewsHandler(db))
-		public.GET("/news/:id", controller.GetNewsByIDHandler(db))
-		public.GET("/services", controller.GetServicesHandler(db))
-		public.GET("/vision", controller.GetVisionHandler(db))
-		public.GET("/mission", controller.GetMissionHandler(db))
+		public.GET("/hero", heroCtrl.GetHero)
+		public.GET("/hero/images", heroCtrl.GetHeroImages)
+
+		public.GET("/organization", orgCtrl.GetAll)
+
+		public.GET("/members", memberCtrl.GetAll)
+		public.GET("/members/:id", memberCtrl.GetByID)
+
+		public.GET("/partners", partnerCtrl.GetAll)
+		public.GET("/partners/:id", partnerCtrl.GetByID)
+
+		public.GET("/news", newsCtrl.GetAll)
+		public.GET("/news/:id", newsCtrl.GetByID)
+
+		public.GET("/services", serviceCtrl.GetServices)
+		public.GET("/vision", visionCtrl.GetVision)
+		public.GET("/mission", missionCtrl.GetMission)
 	}
 
 	// Group ADMIN /api/admin
 	admin := r.Group("/admin")
-	admin.Use(middleware.AuthMiddleware()) 
+	admin.Use(middleware.AuthMiddleware())
 	{
-		// PARTNER
-		admin.GET("/partners", controller.GetPartnersHandler(db))
-		admin.POST("/partners", controller.CreatePartnerHandler(db))
-		admin.PUT("/partners/:id", controller.UpdatePartnerHandler(db))
-		admin.DELETE("/partners/:id", controller.DeletePartnerHandler(db))
-
 		// MEMBER
-		admin.GET("/members", controller.GetMembersHandler(db))
-		admin.POST("/members", controller.CreateMemberHandler(db))
-		admin.PUT("/members/:id", controller.UpdateMemberHandler(db))
-		admin.DELETE("/members/:id", controller.DeleteMemberHandler(db))
+		admin.GET("/members", memberCtrl.GetAll)
+		admin.POST("/members", memberCtrl.Create)
+		admin.PUT("/members/:id", memberCtrl.Update)
+		admin.DELETE("/members/:id", memberCtrl.Delete)
+
+		// PARTNER
+		admin.GET("/partners", partnerCtrl.GetAll)
+		admin.POST("/partners", partnerCtrl.Create)
+		admin.PUT("/partners/:id", partnerCtrl.Update)
+		admin.DELETE("/partners/:id", partnerCtrl.Delete)
+
+		// Organization
+		admin.GET("/organization", orgCtrl.GetAll)
+		admin.POST("/organization", orgCtrl.Create)
+		admin.PUT("/organization/:id", orgCtrl.Update)
+		admin.DELETE("/organization/:id", orgCtrl.Delete)
 
 		// NEWS
-		admin.GET("/news", controller.GetNewsHandler(db))
-		admin.POST("/news", controller.CreateNewsHandler(db))
-		admin.PUT("/news/:id", controller.UpdateNewsHandler(db))
-		admin.DELETE("/news/:id", controller.DeleteNewsHandler(db))
+		admin.GET("/news", newsCtrl.GetAll)
+		admin.POST("/news", newsCtrl.Create)
+		admin.PUT("/news/:id", newsCtrl.Update)
+		admin.DELETE("/news/:id", newsCtrl.Delete)
 
 		// EDITABLE CONTENT
-		admin.PUT("/hero", controller.UpdateHeroHandler(db))
-		admin.POST("/hero/images", controller.AddHeroImageHandler(db))
-		admin.DELETE("/hero/images/:id", controller.DeleteHeroImageHandler(db))
+		admin.PUT("/hero", heroCtrl.UpdateHero)
+		admin.POST("/hero/images", heroCtrl.AddHeroImage)
+		admin.DELETE("/hero/images/:id", heroCtrl.DeleteHeroImage)
 
-		admin.PUT("/services", controller.UpdateServicesHandler(db))
-		admin.PUT("/vision", controller.UpdateVisionHandler(db))
-		admin.PUT("/mission", controller.UpdateMissionHandler(db))
+		admin.PUT("/services", serviceCtrl.UpdateServices)
+		admin.PUT("/vision", visionCtrl.UpdateVision)
+		admin.PUT("/mission", missionCtrl.UpdateMission)
+
 	}
 }

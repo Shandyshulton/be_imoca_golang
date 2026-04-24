@@ -27,12 +27,16 @@ func main() {
 	gin.DefaultWriter = io.MultiWriter(f, os.Stdout)
 
 	// 2. KONEKSI DB
+	// Koneksi SQL Manual (untuk modul lama)
 	db := config.ConnectDB()
 	defer db.Close()
 
 	if err := db.Ping(); err != nil {
 		log.Fatal("Database tidak merespon: ", err)
 	}
+
+	// Koneksi GORM (untuk modul Organization baru)
+	gormDB := config.ConnectGORM() // Anda perlu membuat fungsi ini di package config
 
 	// 3. SETUP GIN
 	r := gin.Default()
@@ -54,7 +58,8 @@ func main() {
 	// 6. ROUTES - Dibungkus dengan grup /api
 	api := r.Group("/api")
 	{
-		route.InitRoutes(api, db) // Melemparkan grup /api ke InitRoutes
+		// Kirim kedua variabel database (db untuk SQL, gormDB untuk GORM)
+		route.InitRoutes(api, db, gormDB) 
 	}
 
 	// 7. RUN

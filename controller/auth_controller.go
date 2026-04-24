@@ -1,4 +1,4 @@
-package controller
+package controllers
 
 import (
 	"be_imoca_golang/model"

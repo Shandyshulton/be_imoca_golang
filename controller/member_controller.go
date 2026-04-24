@@ -1,183 +1,190 @@
-package controller
+package controllers
 
 import (
 	"be_imoca_golang/model"
-	"be_imoca_golang/util"
-	"database/sql"
-	"log"
+	"fmt"
 	"net/http"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
-
+	
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
-type MemberUri struct {
-	ID int `uri:"id" binding:"required"`
+type MemberController struct {
+	DB *gorm.DB
 }
 
-// Get Members
-func GetMembersHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		keyword := c.Query("name")
-		members, err := model.GetAllMembers(db, keyword)
-		if err != nil {
-			log.Printf("[ERROR] Gagal ambil data member: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    "500",
-				"message": "Gagal memuat daftar anggota",
-			})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Daftar anggota berhasil dimuat",
-			"data":    members,
-		})
+// Get All Members (with Search)
+func (mc *MemberController) GetAll(c *gin.Context) {
+	var members []model.Member
+	keyword := c.Query("name")
+
+	query := mc.DB.Order("id desc")
+	if keyword != "" {
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
-}
 
-// Get Member ID
-func GetMemberByIDHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var uri MemberUri
-		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
-			return
-		}
-
-		member, err := model.GetMemberByID(db, uri.ID)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Anggota tidak ditemukan"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"code":    "200",
-			"message": "Detail anggota berhasil dimuat",
-			"data":    member,
-		})
+	if err := query.Find(&members).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data member"})
+		return
 	}
+	c.JSON(http.StatusOK, members)
 }
+
+// Get Member By ID
+func (mc *MemberController) GetByID(c *gin.Context) {
+	id := c.Param("id")
+	var member model.Member
+
+	if err := mc.DB.First(&member, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member tidak ditemukan"})
+		return
+	}
+
+	c.JSON(http.StatusOK, member)
+}
+
 
 // Create Member
-func CreateMemberHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var m model.Member
+func (mc *MemberController) Create(c *gin.Context) {
+	var member model.Member
 
-		m.Name = c.PostForm("name")
-		m.Email = c.PostForm("email")
-		m.Phone = c.PostForm("phone")
-		m.Description = c.PostForm("description")
-		m.Link = c.PostForm("link")
+	member.Name = c.PostForm("name")
+	member.Email = c.PostForm("email")
+	member.Phone = c.PostForm("phone")
+	member.Description = c.PostForm("description")
+	member.Link = c.PostForm("link")
 
-		if strings.TrimSpace(m.Name) == "" || strings.TrimSpace(m.Email) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Nama dan Email wajib diisi"})
+	file, err := c.FormFile("image")
+	if err == nil {
+		// Validasi Ukuran File (Max 10MB)
+		if file.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 10MB"})
 			return
 		}
 
-		newImageName, err := util.HandleFileUpload(c, "image", "members", "")
-		if err != nil {
-			log.Printf("[ERROR] Gagal upload gambar member: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": err.Error(), 
-			})
-			return
-		}
-		m.Image = newImageName
-
-		if err := model.CreateMember(db, &m); err != nil {
-			log.Printf("[DB ERROR] %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Database error: " + err.Error()})
+		// Validasi Ekstensi
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Hanya mendukung format .jpg, .jpeg, dan .png"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{
-			"code":    "201",
-			"message": "Anggota berhasil didaftarkan!",
-			"data":    m,
-		})
+		uploadDir := "storage/uploads/members/"
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.MkdirAll(uploadDir, os.ModePerm)
+		}
+
+		newFileName := fmt.Sprintf("member-%s%s", uuid.New().String(), ext)
+		dst := uploadDir + newFileName
+
+		if err := c.SaveUploadedFile(file, dst); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan file: " + err.Error()})
+			return
+		}
+
+		member.Image = newFileName
 	}
+
+	if err := mc.DB.Create(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan ke database"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, member)
 }
 
 // Update Member
-func UpdateMemberHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var uri MemberUri
-		if err := c.ShouldBindUri(&uri); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID tidak valid"})
-			return
-		}
+func (mc *MemberController) Update(c *gin.Context) {
+	id := c.Param("id")
+	var member model.Member
 
-		oldMember, err := model.GetMemberByID(db, uri.ID)
-		if err != nil {
-			log.Printf("[WARN] Update member ID %d gagal: Tidak ditemukan", uri.ID)
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Anggota tidak ditemukan"})
-			return
-		}
-
-		newImageName, err := util.HandleFileUpload(c, "image", "members", oldMember.Image)
-		if err != nil {
-			log.Printf("[ERROR] Gagal proses gambar member: %v", err)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    "400",
-				"message": err.Error(),
-			})
-			return
-		}
-
-		m := model.Member{
-			ID:          uri.ID,
-			Name:        c.PostForm("name"),
-			Email:       c.PostForm("email"),
-			Phone:       c.PostForm("phone"),
-			Description: c.PostForm("description"),
-			Link:        c.PostForm("link"),
-			Image:       newImageName,
-		}
-
-		if strings.TrimSpace(m.Name) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "Nama wajib diisi"})
-			return
-		}
-
-		if err := model.UpdateMember(db, &m); err != nil {
-			log.Printf("[DB ERROR] Gagal update member ID %d: %v", uri.ID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal update database"})
-			return
-		}
-
-		log.Printf("[SUCCESS] Member ID %d berhasil diperbarui", uri.ID)
-		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Data berhasil diperbarui", "data": m})
+	// Cari data lama di DB
+	if err := mc.DB.First(&member, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member tidak ditemukan"})
+		return
 	}
+
+	// Simpan nama file lama
+	oldImage := member.Image
+	uploadDir := "storage/uploads/members/"
+
+	member.Name = c.DefaultPostForm("name", member.Name)
+	member.Email = c.DefaultPostForm("email", member.Email)
+	member.Phone = c.DefaultPostForm("phone", member.Phone)
+	member.Description = c.DefaultPostForm("description", member.Description)
+	member.Link = c.DefaultPostForm("link", member.Link)
+
+	file, err := c.FormFile("image")
+	if err == nil {
+		// 1. Validasi Ukuran (Max 10MB)
+		if file.Size > 10*1024*1024 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 10MB"})
+			return
+		}
+
+		// 2. Validasi Ekstensi
+		ext := strings.ToLower(filepath.Ext(file.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Hanya mendukung format .jpg, .jpeg, dan .png"})
+			return
+		}
+
+		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+			os.MkdirAll(uploadDir, os.ModePerm)
+		}
+
+		newFileName := fmt.Sprintf("member-%s%s", uuid.New().String(), ext)
+		dst := uploadDir + newFileName
+		
+		if err := c.SaveUploadedFile(file, dst); err == nil {
+			// Hapus file lama jika ada agar tidak menumpuk
+			if oldImage != "" {
+				os.Remove(uploadDir + oldImage)
+			}
+			member.Image = newFileName
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal simpan file baru"})
+			return
+		}
+	}
+
+	// Simpan perubahan ke DB (Update field Image akan terdeteksi di sini)
+	if err := mc.DB.Save(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal update database"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Data berhasil diperbarui", "data": member})
 }
 
 // Delete Member
-func DeleteMemberHandler(db *sql.DB) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		idStr := c.Param("id")
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "400", "message": "ID harus berupa angka"})
-			return
-		}
+func (mc *MemberController) Delete(c *gin.Context) {
+	id := c.Param("id")
+	var member model.Member
 
-		member, err := model.GetMemberByID(db, id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"code": "404", "message": "Anggota tidak ditemukan"})
-			return
-		}
-
-		if err := model.DeleteMember(db, id); err != nil {
-			log.Printf("[DB ERROR] Gagal hapus member ID %d: %v", id, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"code": "500", "message": "Gagal hapus data dari database"})
-			return
-		}
-
-		util.DeleteFile("members", member.Image)
-
-		log.Printf("[SUCCESS] Member ID %d dan filenya berhasil dihapus", id)
-		c.JSON(http.StatusOK, gin.H{"code": "200", "message": "Anggota berhasil dihapus"})
+	if err := mc.DB.First(&member, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member tidak ditemukan"})
+		return
 	}
+
+	imageToDelete := member.Image
+
+	if err := mc.DB.Delete(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus data di database"})
+		return
+	}
+
+	if imageToDelete != "" {
+		path := "storage/uploads/members/" + imageToDelete
+		err := os.Remove(path)
+		if err != nil {
+			fmt.Println("Log: File fisik tidak ditemukan atau gagal dihapus:", err)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Member dan foto berhasil dihapus permanen"})
 }

@@ -1,25 +1,14 @@
 package model
 
-import "database/sql"
+import "time"
 
 type MissionSection struct {
-	ID           int    `json:"id"`
-	SectionTitle string `json:"section_title"`
-	Description  string `json:"description"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	SectionTitle string    `gorm:"type:varchar(255)" json:"section_title"`
+	Description  string    `gorm:"type:text" json:"description"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Get Mission
-func GetMission(db *sql.DB) (MissionSection, error) {
-	var m MissionSection
-	query := `SELECT id, COALESCE(section_title, ''), COALESCE(description, '') 
-			  FROM mission_section LIMIT 1`
-	err := db.QueryRow(query).Scan(&m.ID, &m.SectionTitle, &m.Description)
-	return m, err
-}
-
-// Update Mission
-func UpdateMission(db *sql.DB, m *MissionSection) error {
-	query := `UPDATE mission_section SET section_title = ?, description = ? WHERE id = ?`
-	_, err := db.Exec(query, m.SectionTitle, m.Description, 1) // Paksa update ID 1
-	return err
+func (MissionSection) TableName() string {
+	return "mission_section"
 }

@@ -3,13 +3,15 @@ package config
 import (
 	"database/sql"
 	"fmt"
-	"os" // Tambahkan ini untuk membaca environment variable
+	"os"
 
 	_ "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql" // Tambahkan ini
+	"gorm.io/gorm"         // Tambahkan ini
 )
 
+// ConnectDB tetap untuk modul lama (SQL Manual)
 func ConnectDB() *sql.DB {
-	// Ambil data dari .env menggunakan os.Getenv
 	dbUser := os.Getenv("DB_USER")
 	dbPass := os.Getenv("DB_PASSWORD")
 	dbHost := os.Getenv("DB_HOST")
@@ -19,7 +21,6 @@ func ConnectDB() *sql.DB {
 	if dbHost == "" { dbHost = "127.0.0.1" }
 	if dbPort == "" { dbPort = "3306" }
 
-	// Susun DSN menggunakan variabel dari .env
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true", 
 		dbUser, dbPass, dbHost, dbPort, dbName)
 
@@ -31,6 +32,29 @@ func ConnectDB() *sql.DB {
 	err = db.Ping()
 	if err != nil {
 		panic(fmt.Sprintf("Database %s tidak ditemukan atau MySQL belum jalan: %v", dbName, err))
+	}
+
+	return db
+}
+
+// ConnectGORM untuk modul baru (Organization)
+func ConnectGORM() *gorm.DB {
+	dbUser := os.Getenv("DB_USER")
+	dbPass := os.Getenv("DB_PASSWORD")
+	dbHost := os.Getenv("DB_HOST")
+	dbPort := os.Getenv("DB_PORT")
+	dbName := os.Getenv("DB_NAME")
+
+	if dbHost == "" { dbHost = "127.0.0.1" }
+	if dbPort == "" { dbPort = "3306" }
+
+	// DSN GORM membutuhkan parseTime=True agar CreatedAt/UpdatedAt berfungsi
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", 
+		dbUser, dbPass, dbHost, dbPort, dbName)
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic(fmt.Sprintf("Gagal koneksi GORM ke database %s: %v", dbName, err))
 	}
 
 	return db
