@@ -73,7 +73,6 @@ func (nc *NewsController) Create(c *gin.Context) {
 	news.Badge = c.DefaultPostForm("badge", "REGULASI")
 	news.URL = c.PostForm("url")
 
-	// Parsing Tanggal
 	pubDate := c.PostForm("published_at")
 	if pubDate != "" {
 		t, _ := time.Parse("2006-01-02", pubDate)
@@ -109,13 +108,12 @@ func (nc *NewsController) Update(c *gin.Context) {
 	id := c.Param("id")
 	var news model.News
 
-	// 1. Cari data lama di database
 	if err := nc.DB.First(&news, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Berita tidak ditemukan"})
 		return
 	}
 
-	// 2. Validasi file baru di awal (Early Validation)
+	// Validasi file baru 
 	file, err := c.FormFile("image")
 	if err == nil {
 		if file.Size > 10*1024*1024 {
@@ -133,15 +131,13 @@ func (nc *NewsController) Update(c *gin.Context) {
 	oldImage := news.Image
 	uploadDir := "storage/uploads/news/"
 
-	// 3. Tangkap data dari form-data ke variabel penampung
 	title := c.DefaultPostForm("title", news.Title)
 	summary := c.DefaultPostForm("summary", news.Summary)
 	source := c.DefaultPostForm("source", news.Source)
 	badge := c.DefaultPostForm("badge", news.Badge)
 	url := c.DefaultPostForm("url", news.URL)
-	imageName := news.Image // Default tetap pakai yang lama
+	imageName := news.Image 
 
-	// Parsing PublishedAt jika dikirim
 	publishedAt := news.PublishedAt
 	pubDate := c.PostForm("published_at")
 	if pubDate != "" {
@@ -150,7 +146,7 @@ func (nc *NewsController) Update(c *gin.Context) {
 		}
 	}
 
-	// 4. Proses Simpan File Baru
+	// Simpan File Baru
 	if file != nil {
 		if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 			os.MkdirAll(uploadDir, os.ModePerm)
@@ -170,7 +166,6 @@ func (nc *NewsController) Update(c *gin.Context) {
 		}
 	}
 
-	// 5. UPDATE MENGGUNAKAN MAP (Solusi agar pasti tersimpan)
 	updateData := map[string]interface{}{
 		"title":        title,
 		"summary":      summary,
@@ -181,13 +176,11 @@ func (nc *NewsController) Update(c *gin.Context) {
 		"published_at": publishedAt,
 	}
 
-	// Updates(updateData) akan memaksa update kolom yang ada di map saja
 	if err := nc.DB.Model(&news).Updates(updateData).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal update database: " + err.Error()})
 		return
 	}
 
-	// Ambil ulang data terbaru setelah update untuk dikembalikan di respons
 	nc.DB.First(&news, id)
 	c.JSON(http.StatusOK, news)
 }

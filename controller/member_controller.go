@@ -120,13 +120,13 @@ func (mc *MemberController) Update(c *gin.Context) {
 
 	file, err := c.FormFile("image")
 	if err == nil {
-		// 1. Validasi Ukuran (Max 10MB)
+		// Validasi Ukuran (Max 10MB)
 		if file.Size > 10*1024*1024 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file maksimal 10MB"})
 			return
 		}
 
-		// 2. Validasi Ekstensi
+		// Validasi Ekstensi
 		ext := strings.ToLower(filepath.Ext(file.Filename))
 		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Hanya mendukung format .jpg, .jpeg, dan .png"})
@@ -141,7 +141,7 @@ func (mc *MemberController) Update(c *gin.Context) {
 		dst := uploadDir + newFileName
 		
 		if err := c.SaveUploadedFile(file, dst); err == nil {
-			// Hapus file lama jika ada agar tidak menumpuk
+			// Hapus file lama
 			if oldImage != "" {
 				os.Remove(uploadDir + oldImage)
 			}
@@ -152,7 +152,6 @@ func (mc *MemberController) Update(c *gin.Context) {
 		}
 	}
 
-	// Simpan perubahan ke DB (Update field Image akan terdeteksi di sini)
 	if err := mc.DB.Save(&member).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal update database"})
 		return

@@ -2,7 +2,6 @@ package model
 
 import "time"
 
-// Untuk tabel vision_settings (Singleton)
 type VisionSetting struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	SectionTitle string    `gorm:"type:varchar(255)" json:"section_title"`
@@ -10,7 +9,6 @@ type VisionSetting struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Untuk tabel vision_items
 type VisionItem struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	Icon        string    `gorm:"type:varchar(100)" json:"icon"`

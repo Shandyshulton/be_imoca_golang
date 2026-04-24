@@ -44,7 +44,6 @@ func (sc *ServiceController) UpdateServices(c *gin.Context) {
 		return
 	}
 
-	// Jalankan Transaksi
 	err := sc.DB.Transaction(func(tx *gorm.DB) error {
 		// 1. Update Judul Section (ID 1)
 		if err := tx.Model(&model.ServiceSetting{}).Where("id = ?", 1).
@@ -52,12 +51,10 @@ func (sc *ServiceController) UpdateServices(c *gin.Context) {
 			return err
 		}
 
-		// 2. Hapus semua item layanan lama
 		if err := tx.Exec("DELETE FROM services_items").Error; err != nil {
 			return err
 		}
 
-		// 3. Masukkan item layanan baru jika ada
 		if len(input.Items) > 0 {
 			if err := tx.Create(&input.Items).Error; err != nil {
 				return err

@@ -2,7 +2,6 @@ package model
 
 import "time"
 
-// Tabel services_settings (Singleton)
 type ServiceSetting struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	SectionTitle string    `gorm:"type:varchar(255)" json:"section_title"`
@@ -10,7 +9,6 @@ type ServiceSetting struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// Tabel services_items
 type ServiceItem struct {
 	ID              uint      `gorm:"primaryKey" json:"id"`
 	Icon            string    `gorm:"type:varchar(100)" json:"icon"`

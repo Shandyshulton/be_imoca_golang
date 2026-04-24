@@ -131,7 +131,7 @@ func (pc *PartnerController) Update(c *gin.Context) {
 		
 		if err := c.SaveUploadedFile(file, uploadDir+newFileName); err == nil {
 			if oldImage != "" {
-				os.Remove(uploadDir + oldImage) // Hapus logo lama agar tidak menumpuk
+				os.Remove(uploadDir + oldImage) // Hapus logo lama 
 			}
 			partner.Image = newFileName
 		}

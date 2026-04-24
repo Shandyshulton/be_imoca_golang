@@ -38,7 +38,6 @@ func (vc *VisionController) UpdateVision(c *gin.Context) {
 		return
 	}
 
-	// Gunakan Transaction untuk keamanan data
 	err := vc.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.VisionSetting{}).Where("id = ?", 1).
 			Update("section_title", input.SectionTitle).Error; err != nil {

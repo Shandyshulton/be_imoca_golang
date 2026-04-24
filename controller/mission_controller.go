@@ -16,7 +16,6 @@ type MissionController struct {
 func (mc *MissionController) GetMission(c *gin.Context) {
 	var mission model.MissionSection
 	
-	// Mengambil data pertama (LIMIT 1)
 	if err := mc.DB.First(&mission).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    "404",
@@ -35,7 +34,6 @@ func (mc *MissionController) GetMission(c *gin.Context) {
 func (mc *MissionController) UpdateMission(c *gin.Context) {
 	var mission model.MissionSection
 	
-	// Cek apakah data sudah ada
 	if err := mc.DB.First(&mission).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    "404",
@@ -44,7 +42,6 @@ func (mc *MissionController) UpdateMission(c *gin.Context) {
 		return
 	}
 
-	// Binding input JSON
 	var input model.MissionSection
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -54,7 +51,6 @@ func (mc *MissionController) UpdateMission(c *gin.Context) {
 		return
 	}
 
-	// Gunakan Map untuk memaksa update ke baris ID yang ditemukan
 	updateData := map[string]interface{}{
 		"section_title": input.SectionTitle,
 		"description":   input.Description,
